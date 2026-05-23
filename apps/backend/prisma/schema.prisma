@@ -85,3 +85,30 @@ model Member {
 
   @@map("members")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AuditLog
+// Immutable record of every significant action in the platform.
+// actorUserId is nullable — system-initiated events (e.g. automated jobs) have
+// no actor. entityId is stored as a string to accommodate any entity type.
+// metadata holds structured context (IP is also promoted to its own column
+// so it can be indexed / filtered without JSON extraction).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String? // null for system-initiated events
+  action      String // e.g. "auth.login", "member.created"
+  entityType  String? // e.g. "User", "Member", "MarriageRequest"
+  entityId    String? // public code or internal id (never exposed directly)
+  metadata    Json? // arbitrary structured context
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

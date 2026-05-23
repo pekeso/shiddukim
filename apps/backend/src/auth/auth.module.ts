@@ -7,6 +7,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { HashingService } from '../common/services/hashing.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AuditModule } from '../audit/audit.module';
 
 /**
  * AuthModule — wires together all authentication concerns:
@@ -27,6 +28,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 @Module({
   imports: [
     PrismaModule,
+    AuditModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     // Register JwtModule without a default secret — secrets are passed
     // per-call in AuthService to keep access and refresh secrets separate.
