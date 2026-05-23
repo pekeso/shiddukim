@@ -202,15 +202,37 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 6 — Member Registry
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-06-members` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — Member, Community, UserMemberLink models
-  - [ ] `apps/backend/src/members/members.module.ts`
-  - [ ] `apps/backend/src/members/members.service.ts`
-  - [ ] `apps/backend/src/members/members.controller.ts`
-  - [ ] `apps/backend/src/communities/communities.module.ts`
+  - [x] `apps/backend/prisma/migrations/20260523114336_add_member_community_user_member_link/migration.sql` — Gender enum, full Member expansion, Community, UserMemberLink tables + indexes
+  - [x] `apps/backend/src/members/dto/create-member.dto.ts` — CreateMemberDto (all fields, French validation)
+  - [x] `apps/backend/src/members/dto/update-member.dto.ts` — UpdateMemberDto (no baptism fields — members cannot change church-official data)
+  - [x] `apps/backend/src/members/dto/query-members.dto.ts` — QueryMembersDto (search + pagination)
+  - [x] `apps/backend/src/members/members.service.ts` — MembersService: create, findAll, findByCode, update, getQrCode, generateMemberCode, detectDuplicates
+  - [x] `apps/backend/src/members/members.controller.ts` — MembersController: all 5 endpoints
+  - [x] `apps/backend/src/members/members.module.ts` — MembersModule (exports MembersService)
+  - [x] `apps/backend/src/communities/dto/create-community.dto.ts` — CreateCommunityDto
+  - [x] `apps/backend/src/communities/dto/update-community.dto.ts` — UpdateCommunityDto
+  - [x] `apps/backend/src/communities/dto/assign-member.dto.ts` — AssignMemberDto
+  - [x] `apps/backend/src/communities/communities.service.ts` — CommunitiesService: create, findAll, findOne, update, assignMember
+  - [x] `apps/backend/src/communities/communities.controller.ts` — CommunitiesController: all 5 endpoints
+  - [x] `apps/backend/src/communities/communities.module.ts` — CommunitiesModule
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — Gender enum, expanded Member, new Community + UserMemberLink models, UserMemberLink relation on User
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `community` and `userMemberLink` getters
+  - [x] `apps/backend/src/app.module.ts` — imports MembersModule, CommunitiesModule
 - Key decisions made:
-  - (fill in after phase)
+  - **memberCode generation:** `SHK-YYYY-NNNNN` — finds the highest existing code for the current year, increments, and retries up to 3 times on race collisions. DB unique constraint is the final safety net.
+  - **QR code:** `qrcode` npm package generates a base64 PNG data URL encoding the `memberCode` string. Width 300px, error correction M, margin 2. Returned as `{ memberCode, qrCode }`.
+  - **Duplicate detection:** Soft warning (not a hard block) on three signals: (1) firstName + lastName + dateOfBirth match, (2) phone match, (3) email match. Returns `duplicateWarnings[]` in the create response so the UI can prompt for confirmation.
+  - **Baptism data protection:** `UpdateMemberDto` intentionally omits `baptismDate` and `baptizedBy` — church-official data can only be set at creation (by authorised staff) or via a future admin-only flow.
+  - **Response shape:** `toResponse()` maps Prisma records to `MemberResponse` — the database `id` is NEVER included. All API consumers use `memberCode` as the public identifier.
+  - **Audit diff:** `MEMBER.UPDATED` metadata includes `{ changedFields: { fieldName: { from, to } } }` for every modified field. No-op updates (nothing changed) skip the DB write and the audit event.
+  - **Community president:** Stored internally as `presidentMemberId` (DB UUID). API accepts and returns `presidentMemberCode` (human-readable) — the service resolves between the two transparently.
+  - **Community ID in URLs:** Community endpoints use the internal UUID (`/communities/:id`) because communities have no human-readable code. Unlike member IDs, community IDs carry no PII and are safe to expose.
+  - **Assign member endpoint:** `POST /communities/:id/members` updates `member.communityId`. Requires `member.update` permission. Returns 409 if the member is already in the same community.
+  - **Installed packages:** `qrcode`, `@types/qrcode`
 
 ---
 
