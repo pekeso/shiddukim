@@ -92,6 +92,25 @@ enum FileAccessAction {
   GENERATE
 }
 
+enum MarriageRequestStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  WAITING_APPOINTMENT
+  COUNSELING
+  MEDICAL_REFERRAL
+  WAITING_RESULTS
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum MarriageClassification {
+  GREEN
+  ORANGE
+  RED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User
 // A user account used for authentication.
@@ -164,6 +183,7 @@ model Member {
   // Relations
   userLinks          UserMemberLink[]
   ledCommunities     Community[]      @relation("CommunityPresident")
+  marriageRequests   MarriageRequest[]
 
   // Indexes for search and duplicate detection
   @@index([lastName, firstName])
@@ -348,6 +368,49 @@ model Document {
   @@index([uploadedByUserId])
   @@index([createdAt])
   @@map("documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MarriageRequest
+// A marriage case opened by a church member.
+// requestCode is the only public identifier — never expose `id` in API responses.
+// memberId references the requesting member (internal FK — not returned to clients).
+// All status transitions are validated server-side via ALLOWED_TRANSITIONS.
+// Pastoral notes and classification are restricted to pastoral staff.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MarriageRequest {
+  id          String @id @default(cuid())
+  requestCode String @unique // e.g. MAR-2026-00001 — public identifier
+
+  // Requesting member — internal FK, never returned directly to API clients
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+
+  // Spouse information (filled by the member before submission)
+  spouseFullName       String?
+  spousePhone          String?
+  spouseEmail          String?
+  intendedMarriageDate DateTime?
+
+  // Workflow state
+  status         MarriageRequestStatus  @default(DRAFT)
+  classification MarriageClassification? // set by PASTOR; null until classified
+
+  // Pastoral notes — only written by pastoral staff (marriage.review permission)
+  pastorNotes String?
+
+  // Workflow timestamps
+  submittedAt DateTime? // set when status transitions from DRAFT → SUBMITTED
+  reviewedAt  DateTime? // updated on every pastoral action (status/classification change)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("marriage_requests")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

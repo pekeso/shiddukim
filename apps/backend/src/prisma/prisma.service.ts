@@ -66,4 +66,8 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get fileAccessLog() {
     return this.client.fileAccessLog;
   }
+
+  get marriageRequest() {
+    return this.client.marriageRequest;
+  }
 }
