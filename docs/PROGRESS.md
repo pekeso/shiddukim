@@ -117,15 +117,28 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 3 — RBAC & Rate Limiting
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-03-rbac` → `develop`
 - Key files created:
-  - [ ] `apps/backend/src/common/constants/permissions.ts`
-  - [ ] `apps/backend/src/common/constants/role-permissions.ts`
-  - [ ] `apps/backend/src/common/guards/permissions.guard.ts`
-  - [ ] `apps/backend/src/common/decorators/require-permissions.decorator.ts`
-  - [ ] `apps/backend/src/common/decorators/public.decorator.ts`
+  - [x] `apps/backend/src/common/constants/permissions.ts` — 15 Permission string constants (`member.create` … `audit.view`)
+  - [x] `apps/backend/src/common/constants/role-permissions.ts` — `ROLE_PERMISSIONS` map: each Role → Permission[]
+  - [x] `apps/backend/src/common/decorators/public.decorator.ts` — `@Public()` sets `IS_PUBLIC_KEY` metadata
+  - [x] `apps/backend/src/common/decorators/require-permissions.decorator.ts` — `@RequirePermissions(...permissions)` sets `PERMISSIONS_KEY` metadata
+  - [x] `apps/backend/src/common/guards/permissions.guard.ts` — global `PermissionsGuard`; French 403 on denial
+  - [x] `apps/backend/src/common/storage/redis-throttler.storage.ts` — `RedisThrottlerStorage` implements `ThrottlerStorage` using ioredis
+- Key files updated:
+  - [x] `apps/backend/src/auth/guards/jwt-auth.guard.ts` — injects `Reflector`; skips auth when `IS_PUBLIC_KEY` is set
+  - [x] `apps/backend/src/app.module.ts` — imports `ThrottlerModule` (Redis store, 60 req/60 s); registers three `APP_GUARD`s in order
+  - [x] `apps/backend/src/auth/auth.controller.ts` — `@Public()` on login + refresh-token; strict `@Throttle` on login (5/60 s)
+  - [x] `apps/backend/src/health/health.controller.ts` — `@Public()` + `@SkipThrottle()` for infra health probes
 - Key decisions made:
-  - (fill in after phase)
+  - **Global guard order:** `ThrottlerGuard` (rate limit first) → `JwtAuthGuard` (auth) → `PermissionsGuard` (RBAC). Throttle runs before auth so brute-force attempts are blocked regardless of JWT validity.
+  - **@Public() scope:** Both `JwtAuthGuard` and `PermissionsGuard` check `IS_PUBLIC_KEY`; a single decorator opts a route out of the entire auth stack.
+  - **No permission = authenticated only:** A protected route without `@RequirePermissions()` passes `PermissionsGuard` — only a valid JWT is required. Fine-grained permission declarations are optional per route.
+  - **ThrottlerStorage:** Custom `RedisThrottlerStorage` using `ioredis` directly; no community wrapper dependency. Fixed-window strategy with `INCR` + `PEXPIRE`. `ttl` from `ThrottlerOptions` is in seconds; converted to ms for Redis.
+  - **CHURCH_ADMIN excludes `marriage.classify`:** Classification of marriage cases is a pastoral act, not an administrative one. CHURCH_ADMIN cannot classify cases.
+  - **Login throttle:** 5 requests / 60 s per IP on `POST /auth/login` (brute-force protection). `POST /auth/refresh-token`: 10 / 60 s.
+  - **Installed packages:** `ioredis` (Redis client, used by `RedisThrottlerStorage`)
 
 ---
 
