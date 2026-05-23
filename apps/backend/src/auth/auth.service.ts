@@ -254,6 +254,23 @@ export class AuthService {
     return { message: 'Déconnexion réussie.' };
   }
 
+  // ── Public token issuance (for activation and future flows) ──────────────────
+
+  /**
+   * Issues a token pair for an already-validated user.
+   *
+   * Called by ActivationService after a successful member activation so that
+   * the newly created user is immediately logged in without a separate call to
+   * POST /auth/login.
+   */
+  async issueTokenPair(
+    userId: string,
+    email: string,
+    role: string,
+  ): Promise<TokenPair> {
+    return this.generateAndStoreTokens(userId, email, role);
+  }
+
   // ── Token generation ────────────────────────────────────────────────────────
 
   /**
