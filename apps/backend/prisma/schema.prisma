@@ -37,6 +37,11 @@ enum MemberStatus {
   DECEASED
 }
 
+enum Gender {
+  MALE
+  FEMALE
+}
+
 enum VerificationChannel {
   EMAIL
   SMS
@@ -84,30 +89,108 @@ model User {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Linked member records (set during member activation)
+  memberLinks UserMemberLink[]
+
   @@map("users")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Member
 // The official church identity record for a person.
-// Expanded in Phase 6.
+// memberCode is the only public identifier — never expose `id` in API responses.
+// baptismDate and baptizedBy are church-official fields; members cannot edit them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Member {
   id         String @id @default(cuid())
-  memberCode String @unique // e.g. SHK-2026-00001
+  memberCode String @unique // e.g. SHK-2026-00001 — human-readable public code
 
-  firstName String
-  lastName  String
-  email     String?
-  phone     String?
+  // Personal information
+  firstName    String
+  middleName   String?
+  lastName     String
+  gender       Gender?
+  dateOfBirth  DateTime?
+  placeOfBirth String?
+  address      String?
+  phone        String?
+  email        String?
+
+  // Photo — stored as an R2 object key, never a public URL
+  photoUrl String?
+
+  // Community assignment
+  communityId String?
+  community   Community? @relation("CommunityMembers", fields: [communityId], references: [id])
+
+  // Church / baptism data — only church officials can update these fields
+  baptismDate DateTime?
+  baptizedBy  String?
 
   status MemberStatus @default(CREATED)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations
+  userLinks          UserMemberLink[]
+  ledCommunities     Community[]      @relation("CommunityPresident")
+
+  // Indexes for search and duplicate detection
+  @@index([lastName, firstName])
+  @@index([email])
+  @@index([phone])
+  @@index([communityId])
+  @@index([status])
   @@map("members")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Community
+// A church sub-group (cell, choir, etc.) that members can be assigned to.
+// presidentMemberId references the member who leads the community.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Community {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+
+  // Optional: designate a member as president of this community
+  presidentMemberId String?
+  president         Member? @relation("CommunityPresident", fields: [presidentMemberId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Members assigned to this community
+  members Member[] @relation("CommunityMembers")
+
+  @@map("communities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UserMemberLink
+// Links an authentication user account to an official church member record.
+// Created during member activation (Phase 9).
+// verifiedAt is set when the OTP verification confirms the link.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserMemberLink {
+  id       String @id @default(cuid())
+  userId   String
+  memberId String
+
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@unique([userId, memberId])
+  @@index([memberId])
+  @@map("user_member_links")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
