@@ -173,14 +173,31 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 5 — Verification Service (OTP)
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-05-verification` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — OtpVerification model
-  - [ ] `apps/backend/src/verification/verification.module.ts`
-  - [ ] `apps/backend/src/verification/verification.service.ts`
-  - [ ] `apps/backend/src/verification/providers/twilio.provider.ts`
+  - [x] `apps/backend/prisma/migrations/20260523112251_add_otp_verification/migration.sql` — OtpVerification table + 4 Prisma enums
+  - [x] `apps/backend/src/verification/enums/index.ts` — re-exports Prisma-generated enums (VerificationChannel, VerificationPurpose, VerificationProvider, OtpStatus)
+  - [x] `apps/backend/src/verification/interfaces/verification-provider.interface.ts` — IVerificationProvider contract + VERIFICATION_PROVIDER DI token
+  - [x] `apps/backend/src/verification/providers/twilio.provider.ts` — TwilioVerificationProvider
+  - [x] `apps/backend/src/verification/verification.service.ts` — VerificationService
+  - [x] `apps/backend/src/verification/verification.module.ts` — VerificationModule
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — 4 new enums + OtpVerification model
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `otpVerification` getter
+  - [x] `apps/backend/src/app.module.ts` — imports VerificationModule
 - Key decisions made:
-  - (fill in after phase)
+  - **Enum source of truth:** `VerificationChannel`, `VerificationPurpose`, `VerificationProvider`, `OtpStatus` are defined in Prisma schema and re-exported from `verification/enums/index.ts`. No duplication.
+  - **DI token:** `VERIFICATION_PROVIDER` symbol allows swapping the provider (e.g. mock in tests, different SMS gateway) without modifying `VerificationService`.
+  - **OTP code handling:** Raw codes are NEVER received, stored, or logged by our backend. Twilio Verify manages code generation and validation entirely. We store only the Twilio Verification SID for correlation.
+  - **Resend cooldown:** `startVerification` checks for a PENDING record created within `OTP_RESEND_COOLDOWN_SECONDS` (default 60s). If found, throws 429. Stale PENDING records are marked FAILED before issuing a new one.
+  - **Attempt tracking:** `verifyCode` increments `attempts` on every failure. At `OTP_MAX_ATTEMPTS` (default 5), throws 429. Status transitions: `PENDING → VERIFIED | EXPIRED | FAILED`.
+  - **Expiry:** `expiresAt` is set at creation from `OTP_EXPIRES_IN_MINUTES` (default 10). `verifyCode` marks the record `EXPIRED` when past and throws 400.
+  - **Audit metadata:** `targetValue` (email/phone) is excluded from audit metadata to avoid logging PII. Only `channel`, `purpose`, `targetType` (e.g. "email") are stored.
+  - **verifyCode return value:** Returns `{ verificationId: string }` so Phase 9 (Member Activation) can link the verified OTP to the newly created user account.
+  - **Twilio 20404 handling:** When Twilio returns error code 20404 (verification SID no longer exists — already used or expired), the provider returns `{ valid: false }` instead of throwing, which is treated as an invalid code.
+  - **French messages:** All user-facing messages are in French and channel-aware (email/SMS/WhatsApp variants). Generic messages prevent information leakage.
+  - **Installed packages:** `twilio` (Twilio Node.js SDK)
 
 ---
 
