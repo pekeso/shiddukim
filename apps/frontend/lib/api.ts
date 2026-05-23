@@ -1,6 +1,20 @@
 'use client';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+function resolveApiUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+
+  if (configured && !(typeof window !== 'undefined' && configured.includes('localhost'))) {
+    return configured;
+  }
+
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:4000/api/v1`;
+  }
+
+  return configured ?? 'http://localhost:4000/api/v1';
+}
+
+const API_URL = resolveApiUrl();
 
 function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;

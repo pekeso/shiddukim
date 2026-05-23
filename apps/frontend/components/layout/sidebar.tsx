@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -72,10 +73,16 @@ export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' })
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-border bg-white">
       {/* Logo area */}
-      <div className="flex h-16 items-center border-b border-border px-6">
-        <span className="text-lg font-bold" style={{ color: '#003B8E' }}>
-          ✦ Shiddukim
-        </span>
+      <div className="flex h-16 items-center gap-3 border-b border-border px-5">
+        <Image
+          src="/brand/logo.jpeg"
+          alt="Shiddukim"
+          width={48}
+          height={48}
+          priority
+          className="h-10 w-10 shrink-0 object-contain"
+        />
+        <span className="text-lg font-bold text-[#003B8E]">Shiddukim</span>
       </div>
 
       {/* Nav */}

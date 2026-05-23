@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
@@ -53,9 +54,15 @@ export default function ConnexionPage() {
     <div className="w-full max-w-md">
       {/* Logo / Brand */}
       <div className="mb-8 text-center">
-        <span className="text-3xl font-bold" style={{ color: '#003B8E' }}>
-          ✦ Shiddukim
-        </span>
+        <Image
+          src="/brand/logo.jpeg"
+          alt="Shiddukim"
+          width={128}
+          height={128}
+          priority
+          className="mx-auto h-24 w-auto object-contain"
+        />
+        <h1 className="mt-4 text-2xl font-bold text-[#003B8E]">Shiddukim</h1>
         <p className="mt-2 text-sm text-muted-foreground">Plateforme de gestion des fidèles</p>
       </div>
 

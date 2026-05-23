@@ -1,7 +1,7 @@
 # ----- Build stage -----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+ARG NEXT_PUBLIC_API_URL=http://172.105.156.186:4000/api/v1
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 COPY package.json package-lock.json ./
@@ -12,7 +12,7 @@ COPY apps/frontend ./apps/frontend
 RUN npm run build --workspace=apps/frontend
 
 # ----- Production stage -----
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 
 ENV NODE_ENV=production
