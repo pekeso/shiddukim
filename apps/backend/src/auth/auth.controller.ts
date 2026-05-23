@@ -1,5 +1,13 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Req,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -18,6 +26,9 @@ import type { AuthenticatedUser } from './strategies/jwt.strategy';
  *
  * Protected routes (JWT required — enforced by global JwtAuthGuard):
  *   POST /auth/logout         — uses default throttle (60 req/60 s)
+ *
+ * IP address and User-Agent are extracted here and forwarded to AuthService
+ * so they can be recorded in the audit log.
  *
  * All error messages are in French.
  */
@@ -38,8 +49,11 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto): Promise<TokenPair> {
-    return this.auth.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<TokenPair> {
+    return this.auth.login(dto, {
+      ipAddress: extractIp(req),
+      userAgent: req.headers['user-agent'] ?? null,
+    });
   }
 
   /**
@@ -71,7 +85,29 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
   ): Promise<{ message: string }> {
-    return this.auth.logout(user.id);
+    return this.auth.logout(user.id, {
+      ipAddress: extractIp(req),
+      userAgent: req.headers['user-agent'] ?? null,
+    });
   }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Extracts the originating client IP from the request.
+ *
+ * Checks X-Forwarded-For first (set by reverse proxies) and falls back to
+ * the direct socket address. Returns the first non-empty value or null.
+ */
+function extractIp(req: Request): string | null {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const ip = first.split(',')[0].trim();
+    if (ip) return ip;
+  }
+  return req.socket?.remoteAddress ?? null;
 }

@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { HashingService } from '../common/services/hashing.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../common/constants/audit-actions';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -27,6 +29,13 @@ interface RefreshPayload {
   sub: string;
   nonce: string;
   type: 'refresh';
+}
+
+// ─── Request context passed to audited methods ────────────────────────────────
+
+export interface RequestContext {
+  ipAddress?: string | null;
+  userAgent?: string | null;
 }
 
 // ─── Duration parser ───────────────────────────────────────────────────────────
@@ -67,6 +76,7 @@ export class AuthService {
     private readonly hashing: HashingService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {
     this.accessExpiresIn = this.config.get<string>(
       'JWT_ACCESS_EXPIRES_IN',
@@ -87,8 +97,9 @@ export class AuthService {
    * - Generic 401 on any failure — never reveal whether the email exists.
    * - Suspended users receive the same generic error (no enumeration).
    * - lastLoginAt is updated only on success.
+   * - Audit events are fire-and-forget; they never delay or crash this method.
    */
-  async login(dto: LoginDto): Promise<TokenPair> {
+  async login(dto: LoginDto, ctx: RequestContext = {}): Promise<TokenPair> {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -103,11 +114,32 @@ export class AuthService {
     );
 
     if (!user || !passwordValid) {
+      // Fire-and-forget — failed login (email enumeration safe: no entityId)
+      this.audit.log({
+        actorUserId: null,
+        action: AuditAction.AUTH.FAILED_LOGIN,
+        entityType: 'User',
+        entityId: null, // Do not reveal whether the email exists
+        metadata: { email: dto.email },
+        ipAddress: ctx.ipAddress,
+        userAgent: ctx.userAgent,
+      });
+
       throw new UnauthorizedException(GENERIC_AUTH_ERROR);
     }
 
     if (user.status !== 'ACTIVE') {
-      // Use the same generic message — do not reveal account suspension status
+      // Same generic message — do not reveal account suspension status
+      this.audit.log({
+        actorUserId: user.id,
+        action: AuditAction.AUTH.FAILED_LOGIN,
+        entityType: 'User',
+        entityId: user.id,
+        metadata: { reason: 'account_not_active' },
+        ipAddress: ctx.ipAddress,
+        userAgent: ctx.userAgent,
+      });
+
       throw new UnauthorizedException(GENERIC_AUTH_ERROR);
     }
 
@@ -120,6 +152,17 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    // Fire-and-forget — successful login
+    this.audit.log({
+      actorUserId: user.id,
+      action: AuditAction.AUTH.LOGIN,
+      entityType: 'User',
+      entityId: user.id,
+      metadata: null,
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
     });
 
     return tokens;
@@ -188,10 +231,24 @@ export class AuthService {
    * Clears the stored refresh token — effectively ending all active sessions
    * that relied on it. The access token will expire naturally within its TTL.
    */
-  async logout(userId: string): Promise<{ message: string }> {
+  async logout(
+    userId: string,
+    ctx: RequestContext = {},
+  ): Promise<{ message: string }> {
     await this.prisma.user.update({
       where: { id: userId },
       data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+    });
+
+    // Fire-and-forget — logout event
+    this.audit.log({
+      actorUserId: userId,
+      action: AuditAction.AUTH.LOGOUT,
+      entityType: 'User',
+      entityId: userId,
+      metadata: null,
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
     });
 
     return { message: 'Déconnexion réussie.' };
