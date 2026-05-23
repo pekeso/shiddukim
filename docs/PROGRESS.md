@@ -271,11 +271,29 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 8 — Member Photo Upload
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-08-photo-upload` → `develop`
 - Key files created:
-  - [ ] `apps/backend/src/members/members.controller.ts` (photo endpoints added)
+  - [x] `apps/backend/prisma/migrations/20260523121523_add_member_photo_document_id/migration.sql` — drops `photoUrl`, adds `photoDocumentId` (nullable Text) on members table
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — replaced `photoUrl String?` with `photoDocumentId String?` on Member model
+  - [x] `apps/backend/src/members/members.service.ts` — added `uploadPhoto()`, `getPhotoSignedUrl()`, and private helpers: `findMemberOrThrow()`, `validatePhotoFile()`, `generateDocumentCode()`, `logFileAccess()`; injected `StorageService`; added `PhotoUploadResponse` and `PhotoSignedUrlResponse` interfaces
+  - [x] `apps/backend/src/members/members.controller.ts` — added `POST :memberCode/photo` and `GET :memberCode/photo` endpoints
+  - [x] `apps/backend/src/members/members.module.ts` — imported `StorageModule`
 - Key decisions made:
-  - (fill in after phase)
+  - **Photo MIME validation:** JPEG and PNG only (no PDF) — validated in `MembersService.validatePhotoFile()` before calling `StorageService.upload()`. Global limit is 10 MB; photo-specific limit is 5 MB.
+  - **Multer ceiling:** Controller uses a 10 MB Multer ceiling as an early guard; real 5 MB enforcement is in the service so the error message is in French and consistent.
+  - **Document record:** Each photo upload creates a `Document` record with `documentType: MEMBER_PHOTO`, `ownerType: "Member"`, `ownerId: member.id` (internal DB id, never returned to clients), `visibility: PRIVATE`, `status: ACTIVE`.
+  - **Member.photoDocumentId:** Stores the internal `Document.id` (CUID) — never returned to API clients. When a new photo is uploaded, `photoDocumentId` is updated to the new document's id. The previous Document record is kept (soft-delete deferred to retention policy).
+  - **documentCode generation:** Uses the same `DOC-YYYY-NNNNN` pattern and retry-on-collision strategy as `DocumentsService`.
+  - **MEMBER role ownership:** `GET /members/:memberCode/photo` with role MEMBER checks for a `UserMemberLink` between `actorUserId` and the target member. No link → 403 Forbidden with French message. This is ready for Phase 9 (member activation).
+  - **Staff access:** All non-MEMBER roles with `member.read` permission (SUPER_ADMIN, CHURCH_ADMIN, SECRETARY, PASTOR, COMMUNITY_LEADER) can access any member's photo without ownership restriction.
+  - **Signed URL expiry:** Fixed at 300 s (default R2 expiry). No override for photo endpoint (simpler than /documents/:code/url).
+  - **FileAccessLog:** Every upload logs `UPLOAD` action; every signed URL retrieval logs `VIEW` action. `logFileAccess()` is fire-and-catch (never throws). The signed URL itself is NOT logged.
+  - **Audit:** `FILE.UPLOADED` is fired after successful upload (fire-and-forget via `AuditService.log()`). No audit event for photo view (FileAccessLog covers it).
+  - **No-photo 404:** French message: `"Le fidèle <code> n'a pas encore de photo de profil."` when `photoDocumentId` is null.
+  - **r2ObjectKey never returned:** `PhotoUploadResponse` contains only `{ documentCode, mimeType, fileSize }`. `PhotoSignedUrlResponse` contains only `{ signedUrl, expiresAt }`.
+  - **StorageModule re-used directly:** `MembersModule` imports `StorageModule` directly (not via `DocumentsModule`) to avoid circular module coupling.
 
 ---
 
