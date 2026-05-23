@@ -5,12 +5,17 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../common/constants/audit-actions';
 import {
   MarriageRequestStatus,
   MarriageClassification,
+  DocumentType,
+  DocumentStatus,
+  DocumentVisibility,
+  FileAccessAction,
 } from '../../generated/prisma/client.js';
 import type { CreateMarriageRequestDto } from './dto/create-marriage-request.dto';
 import type { UpdatePastoralNotesDto } from './dto/update-pastoral-notes.dto';
@@ -23,6 +28,12 @@ import {
   STATUS_LABELS,
   CLASSIFICATION_ALLOWED_STATUSES,
 } from './constants/status-transitions';
+import { StorageService } from '../storage/storage.service';
+import {
+  PdfService,
+  formatDateFr,
+  formatDateTimeFr,
+} from '../documents/pdf/pdf.service';
 
 // ─── Response shapes ──────────────────────────────────────────────────────────
 
@@ -50,6 +61,16 @@ export interface PaginatedMarriageRequests {
   page: number;
   limit: number;
   pages: number;
+}
+
+/** Response shape for a generated PDF document. */
+export interface GeneratedDocumentResponse {
+  /** Public document code (DOC-YYYY-NNNNN). */
+  documentCode: string;
+  /** Short-lived signed URL for immediate download. */
+  signedUrl: string;
+  /** ISO 8601 timestamp when the signed URL expires. */
+  signedUrlExpiresAt: string;
 }
 
 // ─── Internal record type (from Prisma join) ──────────────────────────────────
@@ -81,6 +102,8 @@ export class MarriageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
+    private readonly pdf: PdfService,
   ) {}
 
   // ── Create (DRAFT) ─────────────────────────────────────────────────────────
@@ -481,6 +504,255 @@ export class MarriageService {
     return this.toResponse(updated);
   }
 
+  // ── PDF generation: marriage request ──────────────────────────────────────
+
+  /**
+   * Generates and uploads the marriage request summary PDF.
+   *
+   * Flow:
+   *   1. Load the marriage request with full member + community data.
+   *   2. Generate a PDF buffer via PdfService.
+   *   3. Upload the buffer to R2 in folder "marriage/requests/".
+   *   4. Generate a unique documentCode (DOC-YYYY-NNNNN).
+   *   5. Create a Document record linked to this marriage request.
+   *   6. Log GENERATE action in FileAccessLog.
+   *   7. Audit DOCUMENT.GENERATED (fire-and-forget).
+   *   8. Generate and return a signed URL for immediate download.
+   *
+   * Requires: document.generate permission (enforced at controller level).
+   *
+   * @throws NotFoundException — request not found.
+   */
+  async generateMarriageRequestPdf(
+    requestCode: string,
+    actorUserId: string,
+    ctx?: RequestContext,
+  ): Promise<GeneratedDocumentResponse> {
+    // 1. Load request with full member details
+    const request = await this.findRequestWithMemberDetails(requestCode);
+
+    // 2. Build PDF data and generate buffer
+    const pdfBuffer = await this.pdf.generateMarriageRequestPdf({
+      requestCode: request.requestCode,
+      memberName: `${request.member.firstName} ${request.member.lastName}`,
+      memberCode: request.member.memberCode,
+      communityName: request.member.community?.name ?? null,
+      memberDateOfBirth: formatDateFr(request.member.dateOfBirth),
+      spouseFullName: request.spouseFullName,
+      spousePhone: request.spousePhone,
+      spouseEmail: request.spouseEmail,
+      intendedMarriageDate: formatDateFr(request.intendedMarriageDate),
+      submittedAt: formatDateFr(request.submittedAt),
+      generatedAt: formatDateTimeFr(new Date()),
+    });
+
+    // 3. Upload to R2
+    const originalFileName = `dossier-matrimonial-${requestCode}.pdf`;
+    const uploadResult = await this.storage.upload({
+      buffer: pdfBuffer,
+      folder: 'marriage/requests',
+      mimeType: 'application/pdf',
+      originalFileName,
+      uploadedByUserId: actorUserId,
+    });
+
+    // 4. Generate document code
+    const documentCode = await this.generateDocumentCode();
+
+    // 5. Extract stored file name from the R2 key
+    const keyParts = uploadResult.r2ObjectKey.split('/');
+    const storedFileName = keyParts[keyParts.length - 1] ?? randomUUID();
+
+    // 6. Create Document record
+    const document = await this.prisma.document.create({
+      data: {
+        documentCode,
+        ownerType: 'MarriageRequest',
+        ownerId: request.id,
+        documentType: DocumentType.MARRIAGE_REQUEST_PDF,
+        visibility: DocumentVisibility.PRIVATE,
+        status: DocumentStatus.ACTIVE,
+        originalFileName,
+        storedFileName,
+        r2Bucket: uploadResult.bucket,
+        r2ObjectKey: uploadResult.r2ObjectKey,
+        mimeType: 'application/pdf',
+        fileSize: uploadResult.fileSize,
+        checksum: uploadResult.checksum,
+        generatedByUserId: actorUserId,
+        uploadedByUserId: null,
+      },
+    });
+
+    // 7. Log FileAccessLog (GENERATE action — never throws)
+    await this.logFileAccess({
+      documentId: document.id,
+      actorUserId,
+      action: FileAccessAction.GENERATE,
+      ctx,
+      metadata: {
+        documentCode,
+        documentType: DocumentType.MARRIAGE_REQUEST_PDF,
+        requestCode,
+      },
+    });
+
+    // 8. Audit event (fire-and-forget)
+    this.audit.log({
+      actorUserId,
+      action: AuditAction.DOCUMENT.GENERATED,
+      entityType: 'Document',
+      entityId: documentCode,
+      metadata: {
+        documentType: DocumentType.MARRIAGE_REQUEST_PDF,
+        requestCode,
+        memberCode: request.member.memberCode,
+      },
+      ipAddress: ctx?.ipAddress,
+      userAgent: ctx?.userAgent,
+    });
+
+    // 9. Generate signed URL for immediate download (300 s default)
+    const signedUrl = await this.storage.getSignedUrl(
+      uploadResult.r2ObjectKey,
+      300,
+    );
+    const signedUrlExpiresAt = new Date(Date.now() + 300 * 1000).toISOString();
+
+    this.logger.log(
+      `[MarriageService] PDF dossier matrimonial généré: ${documentCode} pour ${requestCode}`,
+    );
+
+    return { documentCode, signedUrl, signedUrlExpiresAt };
+  }
+
+  // ── PDF generation: medical referral ──────────────────────────────────────
+
+  /**
+   * Generates and uploads the medical referral letter PDF.
+   *
+   * Precondition: classification must be GREEN.
+   * Throws BadRequestException with a French message if not.
+   *
+   * Flow mirrors generateMarriageRequestPdf but:
+   *   - Validates classification === GREEN before proceeding.
+   *   - Uses documentType: MEDICAL_REFERRAL_PDF.
+   *   - Uploads to R2 in folder "marriage/referrals/".
+   *
+   * Requires: document.generate permission (enforced at controller level).
+   *
+   * @throws NotFoundException   — request not found.
+   * @throws BadRequestException — classification is not GREEN.
+   */
+  async generateMedicalReferralPdf(
+    requestCode: string,
+    actorUserId: string,
+    ctx?: RequestContext,
+  ): Promise<GeneratedDocumentResponse> {
+    // 1. Load request with full member details
+    const request = await this.findRequestWithMemberDetails(requestCode);
+
+    // 2. Validate classification
+    if (request.classification !== MarriageClassification.GREEN) {
+      const classLabel = request.classification
+        ? `"${request.classification}"`
+        : 'non définie';
+      throw new BadRequestException(
+        `La lettre de référence médicale ne peut être générée que pour un dossier classifié "VERT". ` +
+          `La classification actuelle de ce dossier est ${classLabel}.`,
+      );
+    }
+
+    // 3. Build PDF data and generate buffer
+    const pdfBuffer = await this.pdf.generateMedicalReferralPdf({
+      requestCode: request.requestCode,
+      memberName: `${request.member.firstName} ${request.member.lastName}`,
+      memberCode: request.member.memberCode,
+      spouseFullName: request.spouseFullName,
+      generatedAt: formatDateTimeFr(new Date()),
+    });
+
+    // 4. Upload to R2
+    const originalFileName = `reference-medicale-${requestCode}.pdf`;
+    const uploadResult = await this.storage.upload({
+      buffer: pdfBuffer,
+      folder: 'marriage/referrals',
+      mimeType: 'application/pdf',
+      originalFileName,
+      uploadedByUserId: actorUserId,
+    });
+
+    // 5. Generate document code
+    const documentCode = await this.generateDocumentCode();
+
+    // 6. Extract stored file name from R2 key
+    const keyParts = uploadResult.r2ObjectKey.split('/');
+    const storedFileName = keyParts[keyParts.length - 1] ?? randomUUID();
+
+    // 7. Create Document record
+    const document = await this.prisma.document.create({
+      data: {
+        documentCode,
+        ownerType: 'MarriageRequest',
+        ownerId: request.id,
+        documentType: DocumentType.MEDICAL_REFERRAL_PDF,
+        visibility: DocumentVisibility.PRIVATE,
+        status: DocumentStatus.ACTIVE,
+        originalFileName,
+        storedFileName,
+        r2Bucket: uploadResult.bucket,
+        r2ObjectKey: uploadResult.r2ObjectKey,
+        mimeType: 'application/pdf',
+        fileSize: uploadResult.fileSize,
+        checksum: uploadResult.checksum,
+        generatedByUserId: actorUserId,
+        uploadedByUserId: null,
+      },
+    });
+
+    // 8. Log FileAccessLog
+    await this.logFileAccess({
+      documentId: document.id,
+      actorUserId,
+      action: FileAccessAction.GENERATE,
+      ctx,
+      metadata: {
+        documentCode,
+        documentType: DocumentType.MEDICAL_REFERRAL_PDF,
+        requestCode,
+      },
+    });
+
+    // 9. Audit event (fire-and-forget)
+    this.audit.log({
+      actorUserId,
+      action: AuditAction.DOCUMENT.GENERATED,
+      entityType: 'Document',
+      entityId: documentCode,
+      metadata: {
+        documentType: DocumentType.MEDICAL_REFERRAL_PDF,
+        requestCode,
+        memberCode: request.member.memberCode,
+        classification: request.classification,
+      },
+      ipAddress: ctx?.ipAddress,
+      userAgent: ctx?.userAgent,
+    });
+
+    // 10. Signed URL for immediate download
+    const signedUrl = await this.storage.getSignedUrl(
+      uploadResult.r2ObjectKey,
+      300,
+    );
+    const signedUrlExpiresAt = new Date(Date.now() + 300 * 1000).toISOString();
+
+    this.logger.log(
+      `[MarriageService] PDF référence médicale généré: ${documentCode} pour ${requestCode} (GREEN)`,
+    );
+
+    return { documentCode, signedUrl, signedUrlExpiresAt };
+  }
+
   // ── Request code generation ────────────────────────────────────────────────
 
   /**
@@ -600,5 +872,110 @@ export class MarriageService {
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * Loads a marriage request with full member + community details needed for
+   * PDF generation. Throws NotFoundException if not found.
+   */
+  private async findRequestWithMemberDetails(requestCode: string) {
+    const request = await this.prisma.marriageRequest.findUnique({
+      where: { requestCode },
+      include: {
+        member: {
+          select: {
+            id: true,
+            memberCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            community: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException(
+        `Aucun dossier matrimonial trouvé avec le code ${requestCode}.`,
+      );
+    }
+
+    return request;
+  }
+
+  /**
+   * Generates a unique document code: DOC-YYYY-NNNNN.
+   *
+   * Same strategy as DocumentsService.generateDocumentCode() — find highest
+   * sequence for the current year, increment, retry on collision.
+   */
+  private async generateDocumentCode(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `DOC-${year}-`;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const last = await this.prisma.document.findFirst({
+        where: { documentCode: { startsWith: prefix } },
+        orderBy: { documentCode: 'desc' },
+        select: { documentCode: true },
+      });
+
+      let nextSeq = 1;
+      if (last) {
+        const parts = last.documentCode.split('-');
+        const lastSeq = parseInt(parts[2] ?? '0', 10);
+        nextSeq = isNaN(lastSeq) ? 1 : lastSeq + 1;
+      }
+
+      const code = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+
+      const exists = await this.prisma.document.findUnique({
+        where: { documentCode: code },
+      });
+      if (!exists) return code;
+
+      this.logger.warn(
+        `[MarriageService] Collision sur le code document ${code}, nouvel essai…`,
+      );
+    }
+
+    // UUID-based fallback — virtually impossible to collide
+    return `${prefix}${randomUUID().split('-')[0]}`;
+  }
+
+  /**
+   * Writes a FileAccessLog entry for a document operation.
+   * Never throws — access logging must not crash the main request.
+   */
+  private async logFileAccess(params: {
+    documentId: string;
+    actorUserId: string;
+    action: FileAccessAction;
+    ctx?: RequestContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    metadata?: Record<string, any>;
+  }): Promise<void> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const safeMetadata: any = params.metadata
+        ? JSON.parse(JSON.stringify(params.metadata))
+        : undefined;
+
+      await this.prisma.fileAccessLog.create({
+        data: {
+          documentId: params.documentId,
+          actorUserId: params.actorUserId,
+          action: params.action,
+          ipAddress: params.ctx?.ipAddress ?? null,
+          userAgent: params.ctx?.userAgent ?? null,
+          metadata: safeMetadata,
+        },
+      });
+    } catch (err: unknown) {
+      this.logger.error(
+        `[MarriageService] Impossible d'enregistrer l'accès au fichier: ${String(err)}`,
+      );
+    }
   }
 }
