@@ -50,4 +50,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get otpVerification() {
     return this.client.otpVerification;
   }
+
+  get community() {
+    return this.client.community;
+  }
+
+  get userMemberLink() {
+    return this.client.userMemberLink;
+  }
 }
