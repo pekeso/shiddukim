@@ -3,8 +3,7 @@
 // and passed via PrismaPg adapter at runtime. Skeleton models expanded in later phases.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {

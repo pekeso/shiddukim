@@ -5,7 +5,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { AppointmentType } from '../../../generated/prisma/client.js';
+import { AppointmentType } from '@prisma/client';
 
 /**
  * CreateAppointmentDto — body for POST /appointments.

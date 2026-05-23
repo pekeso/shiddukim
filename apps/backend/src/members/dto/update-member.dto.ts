@@ -7,7 +7,7 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
-import { Gender } from '../../../generated/prisma/client.js';
+import { Gender } from '@prisma/client';
 
 /**
  * DTO for PATCH /members/:memberCode — updates basic member fields.

@@ -16,12 +16,12 @@ import {
   DocumentStatus,
   DocumentVisibility,
   FileAccessAction,
-} from '../../generated/prisma/client.js';
+} from '@prisma/client';
 import type { CreateMemberDto } from './dto/create-member.dto';
 import type { UpdateMemberDto } from './dto/update-member.dto';
 import type { QueryMembersDto } from './dto/query-members.dto';
 import type { RequestContext } from '../auth/auth.service';
-import type { Prisma } from '../../generated/prisma/client.js';
+import type { Prisma } from '@prisma/client';
 
 // ─── Photo upload / retrieval limits ─────────────────────────────────────────
 
@@ -206,6 +206,21 @@ export class MembersService {
       );
     }
     return this.toResponse(member);
+  }
+
+  async findOwnProfile(actorUserId: string): Promise<MemberResponse> {
+    const link = await this.prisma.userMemberLink.findFirst({
+      where: { userId: actorUserId },
+      include: { member: true },
+    });
+
+    if (!link) {
+      throw new NotFoundException(
+        "Aucun dossier de fidèle n'est lié à ce compte utilisateur.",
+      );
+    }
+
+    return this.toResponse(link.member);
   }
 
   // ── Update (basic fields only — no baptism data) ──────────────────────────

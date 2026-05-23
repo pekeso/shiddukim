@@ -16,7 +16,7 @@ import {
   DocumentStatus,
   DocumentVisibility,
   FileAccessAction,
-} from '../../generated/prisma/client.js';
+} from '@prisma/client';
 import type { CreateMarriageRequestDto } from './dto/create-marriage-request.dto';
 import type { UpdatePastoralNotesDto } from './dto/update-pastoral-notes.dto';
 import type { UpdateStatusDto } from './dto/update-status.dto';

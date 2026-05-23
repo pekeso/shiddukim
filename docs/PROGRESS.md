@@ -421,16 +421,43 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 13 — Frontend & Dashboard
-- Status: ⬜ Not started
+- Status: ✅ Complete
 - Key files created:
-  - [ ] `apps/frontend/app/(auth)/connexion/page.tsx`
-  - [ ] `apps/frontend/app/(auth)/activation/page.tsx`
-  - [ ] `apps/frontend/app/(admin)/tableau-de-bord/page.tsx`
-  - [ ] `apps/frontend/app/(admin)/fideles/page.tsx`
-  - [ ] `apps/frontend/app/(admin)/dossiers-matrimoniaux/page.tsx`
-  - [ ] `apps/frontend/app/(member)/mon-profil/page.tsx`
+  - [x] `apps/frontend/lib/api.ts` — authenticated API client with refresh token retry
+  - [x] `apps/frontend/lib/types.ts` — frontend API response types aligned to backend public codes
+  - [x] `apps/frontend/lib/labels.ts` — French labels for statuses, classifications, appointment types, documents, and date formatting
+  - [x] `apps/frontend/contexts/auth-context.tsx` — token persistence + JWT role/email decoding
+  - [x] `apps/frontend/components/layout/auth-guard.tsx` — protected route wrapper
+  - [x] `apps/frontend/components/layout/sidebar.tsx` — French navigation for staff and members
+  - [x] `apps/frontend/components/layout/header.tsx` — authenticated portal header
+  - [x] `apps/frontend/components/layout/portal-shell.tsx` — role-aware shared portal shell
+  - [x] `apps/frontend/app/(auth)/connexion/page.tsx`
+  - [x] `apps/frontend/app/(auth)/activation/page.tsx`
+  - [x] `apps/frontend/app/(admin)/tableau-de-bord/page.tsx`
+  - [x] `apps/frontend/app/(admin)/fideles/page.tsx`
+  - [x] `apps/frontend/app/(admin)/fideles/nouveau/page.tsx`
+  - [x] `apps/frontend/app/(admin)/fideles/[memberCode]/page.tsx`
+  - [x] `apps/frontend/app/(admin)/communautes/page.tsx`
+  - [x] `apps/frontend/app/(member)/mon-profil/page.tsx`
+  - [x] `apps/frontend/app/(portal)/layout.tsx`
+  - [x] `apps/frontend/app/(portal)/dossiers-matrimoniaux/page.tsx`
+  - [x] `apps/frontend/app/(portal)/dossiers-matrimoniaux/nouveau/page.tsx`
+  - [x] `apps/frontend/app/(portal)/dossiers-matrimoniaux/[requestCode]/page.tsx`
+  - [x] `apps/frontend/app/(portal)/rendez-vous/page.tsx`
+  - [x] `apps/frontend/app/(portal)/rendez-vous/nouveau/page.tsx`
+  - [x] `apps/frontend/app/(portal)/documents/page.tsx`
+  - [x] `apps/backend/src/dashboard/dashboard.module.ts`
+  - [x] `apps/backend/src/dashboard/dashboard.controller.ts`
+  - [x] `apps/backend/src/dashboard/dashboard.service.ts`
 - Key decisions made:
-  - (fill in after phase)
+  - **Auth UI contract:** Backend login/activation returns token pairs, not a `user` object. The frontend decodes the access token payload to persist only safe session context (`email`, `role`) and avoids displaying internal database IDs.
+  - **Dashboard backend added in Phase 13:** The Phase 13 prompt expected `/dashboard/summary`, `/dashboard/marriage-stats`, and `/dashboard/appointment-stats`, but no backend dashboard module existed. Added `DashboardModule` without migrations; it aggregates members, marriage classifications/statuses, and upcoming appointments from existing tables.
+  - **Dashboard permissions:** `dashboard.view` is now granted to staff roles that can land on `/tableau-de-bord` after login, including pastors, secretaries, and community leaders.
+  - **Member self-profile endpoint:** Added `GET /members/me` so a member can load their linked official member record without knowing or exposing internal `UserMemberLink` details.
+  - **Shared portal routes:** URLs used by both staff and members (`/dossiers-matrimoniaux`, `/rendez-vous`, `/documents`) live under `(portal)` with a role-aware shell. Admin-only pages remain under `(admin)` and the member profile remains under `(member)`.
+  - **Public identifiers:** UI routes and visible identifiers use `memberCode`, `requestCode`, `appointmentCode`, and `documentCode`. Internal IDs are not shown in the UI; community assignment still uses backend community IDs internally because that is the existing backend contract.
+  - **Frontend font decision:** Removed `next/font/google` to avoid network-dependent builds. The frontend now uses a system font stack configured in Tailwind CSS.
+  - **Verification:** `npm run build --workspace=apps/backend` and `npm run build --workspace=apps/frontend` both pass.
 
 ---
 

@@ -1,5 +1,5 @@
 import { IsEnum } from 'class-validator';
-import { MarriageRequestStatus } from '../../../generated/prisma/client.js';
+import { MarriageRequestStatus } from '@prisma/client';
 
 /**
  * UpdateStatusDto — body for PATCH /marriage-requests/:requestCode/status.

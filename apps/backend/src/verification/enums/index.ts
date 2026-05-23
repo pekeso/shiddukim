@@ -12,11 +12,11 @@ export {
   VerificationPurpose,
   VerificationProvider,
   OtpStatus,
-} from '../../../generated/prisma/enums.js';
+} from '@prisma/client';
 
 export type {
   VerificationChannel as VerificationChannelType,
   VerificationPurpose as VerificationPurposeType,
   VerificationProvider as VerificationProviderType,
   OtpStatus as OtpStatusType,
-} from '../../../generated/prisma/enums.js';
+} from '@prisma/client';

@@ -7,7 +7,7 @@ import {
   NotificationChannel,
   NotificationProvider,
   NotificationStatus,
-} from '../../generated/prisma/client.js';
+} from '@prisma/client';
 import type { EnvConfig } from '../common/config/env.validation.js';
 
 // ─── Input types ─────────────────────────────────────────────────────────────

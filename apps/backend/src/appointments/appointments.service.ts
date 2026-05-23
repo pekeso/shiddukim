@@ -11,11 +11,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../common/constants/audit-actions';
-import {
-  AppointmentStatus,
-  AppointmentType,
-  Role,
-} from '../../generated/prisma/client.js';
+import { AppointmentStatus, AppointmentType, Role } from '@prisma/client';
 import type { CreateAppointmentDto } from './dto/create-appointment.dto';
 import type { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
 import type { CancelAppointmentDto } from './dto/cancel-appointment.dto';

@@ -90,6 +90,14 @@ export class MembersController {
     return this.membersService.findAll(query);
   }
 
+  @Get('me')
+  @RequirePermissions(Permission.MEMBER_READ)
+  async findOwnProfile(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MemberResponse> {
+    return this.membersService.findOwnProfile(user.id);
+  }
+
   /**
    * GET /api/v1/members/:memberCode
    *

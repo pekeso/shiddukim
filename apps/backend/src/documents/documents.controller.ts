@@ -31,7 +31,7 @@ import type {
   PaginatedDocuments,
   QueryDocumentsParams,
 } from './documents.service.js';
-import { DocumentType } from '../../generated/prisma/client.js';
+import { DocumentType } from '@prisma/client';
 
 // ── Query DTO for GET /documents ──────────────────────────────────────────────
 

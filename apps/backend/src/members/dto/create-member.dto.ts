@@ -8,7 +8,7 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
-import { Gender } from '../../../generated/prisma/client.js';
+import { Gender } from '@prisma/client';
 
 /**
  * DTO for POST /members — creates a new church member record.

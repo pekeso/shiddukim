@@ -1,4 +1,4 @@
-import { MarriageRequestStatus } from '../../../generated/prisma/client.js';
+import { MarriageRequestStatus } from '@prisma/client';
 
 /**
  * Allowed status transitions for MarriageRequest workflow.

@@ -1,6 +1,6 @@
 import { IsEnum, IsInt, IsOptional, IsPositive, Max } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AppointmentStatus } from '../../../generated/prisma/client.js';
+import { AppointmentStatus } from '@prisma/client';
 
 /**
  * QueryAppointmentsDto — query params for GET /appointments.

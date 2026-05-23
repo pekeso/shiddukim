@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
-import { DocumentType } from '../../../generated/prisma/client.js';
+import { DocumentType } from '@prisma/client';
 
 /**
  * UploadDocumentDto — body fields for POST /documents/upload.

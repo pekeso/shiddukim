@@ -10,7 +10,7 @@ import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import type { Permission } from '../constants/permissions';
 import { ROLE_PERMISSIONS } from '../constants/role-permissions';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
-import type { Role } from '../../../generated/prisma/client.js';
+import type { Role } from '@prisma/client';
 
 /**
  * PermissionsGuard — enforces RBAC on every protected route.

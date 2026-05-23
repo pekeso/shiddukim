@@ -17,7 +17,7 @@ import {
   DocumentStatus,
   DocumentVisibility,
   FileAccessAction,
-} from '../../generated/prisma/client.js';
+} from '@prisma/client';
 import type { UploadDocumentDto } from './dto/upload-document.dto.js';
 import type { RequestContext } from '../auth/auth.service.js';
 

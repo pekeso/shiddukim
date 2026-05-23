@@ -1,5 +1,5 @@
 import { IsEnum } from 'class-validator';
-import { MarriageClassification } from '../../../generated/prisma/client.js';
+import { MarriageClassification } from '@prisma/client';
 
 /**
  * UpdateClassificationDto — body for PATCH /marriage-requests/:requestCode/classification.

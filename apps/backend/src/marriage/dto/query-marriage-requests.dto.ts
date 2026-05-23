@@ -1,6 +1,6 @@
 import { IsEnum, IsOptional, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
-import { MarriageRequestStatus } from '../../../generated/prisma/client.js';
+import { MarriageRequestStatus } from '@prisma/client';
 
 /**
  * QueryMarriageRequestsDto — query parameters for GET /marriage-requests.

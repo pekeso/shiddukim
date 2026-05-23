@@ -1,4 +1,4 @@
-import type { Role } from '../../../generated/prisma/client.js';
+import type { Role } from '@prisma/client';
 import { Permission } from './permissions';
 
 /**
@@ -42,6 +42,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.MEMBER_UPDATE,
     Permission.APPOINTMENT_CREATE,
     Permission.DOCUMENT_VIEW,
+    Permission.DASHBOARD_VIEW,
   ],
 
   PASTOR: [
@@ -51,9 +52,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.APPOINTMENT_MANAGE,
     Permission.DOCUMENT_VIEW,
     Permission.DOCUMENT_GENERATE,
+    Permission.DASHBOARD_VIEW,
   ],
 
-  COMMUNITY_LEADER: [Permission.MEMBER_READ],
+  COMMUNITY_LEADER: [Permission.MEMBER_READ, Permission.DASHBOARD_VIEW],
 
   MEMBER: [
     Permission.MEMBER_READ,
