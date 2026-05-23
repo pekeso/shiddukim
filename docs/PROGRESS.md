@@ -143,14 +143,32 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 4 — Audit Logging
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-04-audit` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — AuditLog model
-  - [ ] `apps/backend/src/audit/audit.module.ts`
-  - [ ] `apps/backend/src/audit/audit.service.ts`
-  - [ ] `apps/backend/src/common/constants/audit-actions.ts`
+  - [x] `apps/backend/prisma/migrations/20260523110519_add_audit_log/migration.sql` — audit_logs table with indexes
+  - [x] `apps/backend/src/common/constants/audit-actions.ts` — `AuditAction` constants by domain (AUTH, MEMBER, MARRIAGE, DOCUMENT, FILE, APPOINTMENT, ROLE)
+  - [x] `apps/backend/src/audit/audit.service.ts` — `AuditService.log()` fire-and-forget, never throws
+  - [x] `apps/backend/src/audit/audit-logs.controller.ts` — `GET /api/v1/audit-logs` with filters + pagination
+  - [x] `apps/backend/src/audit/dto/query-audit-logs.dto.ts` — `QueryAuditLogsDto` (actorUserId, action, entityType, from, to, page, limit)
+  - [x] `apps/backend/src/audit/audit.module.ts` — exports `AuditService`
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — added `AuditLog` model
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `auditLog` getter
+  - [x] `apps/backend/src/app.module.ts` — imports `AuditModule`
+  - [x] `apps/backend/src/auth/auth.module.ts` — imports `AuditModule`
+  - [x] `apps/backend/src/auth/auth.service.ts` — injects `AuditService`; fires `AUTH.LOGIN`, `AUTH.FAILED_LOGIN`, `AUTH.LOGOUT`
+  - [x] `apps/backend/src/auth/auth.controller.ts` — extracts IP + User-Agent from `Request` and passes as `RequestContext`
 - Key decisions made:
-  - (fill in after phase)
+  - **Fire-and-forget pattern:** `AuditService.log()` is synchronous (void); the DB write is wrapped in `setImmediate()` so it never adds latency to the calling request. The method signature is `log(event): void`.
+  - **Never throws:** All errors inside `persist()` are caught and logged at ERROR level. The calling code is 100% shielded. A missing audit record is preferable to a 500.
+  - **RequestContext:** IP and User-Agent are extracted by the controller, not the service. The service receives an optional `RequestContext` — this keeps the service framework-agnostic and testable.
+  - **IP extraction:** Checks `X-Forwarded-For` first (reverse proxy support), falls back to `req.socket.remoteAddress`.
+  - **Failed login audit:** `entityId` is set to null on unknown-email failures to avoid confirming whether the email exists. When the account is inactive, `entityId` is set (user was found) but the action string is still `auth.failed_login`.
+  - **JSON metadata typing:** A `JsonRecord = Record<string, any>` alias is used in the service. Values are serialized through `JSON.parse(JSON.stringify(...))` before Prisma insert to satisfy Prisma v7's strict `InputJsonValue` type without importing generated types.
+  - **AuditLog model:** `actorUserId` is nullable (for system events). Indexes on `actorUserId`, `action`, `entityType`, `createdAt` for efficient filter queries.
+  - **Pagination:** `GET /audit-logs` defaults to 20 per page, max 100. Returns `{ data, total, page, limit, pages }`.
+  - **RBAC:** `GET /audit-logs` requires `audit.view` permission. Only `SUPER_ADMIN` and `CHURCH_ADMIN` hold this permission.
 
 ---
 
