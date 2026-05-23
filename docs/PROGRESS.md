@@ -324,15 +324,35 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 10 — Marriage Workflow
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-10-marriage` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — MarriageRequest model
-  - [ ] `apps/backend/src/marriage/marriage.module.ts`
-  - [ ] `apps/backend/src/marriage/marriage.service.ts`
-  - [ ] `apps/backend/src/marriage/marriage.controller.ts`
-  - [ ] `apps/backend/src/marriage/constants/status-transitions.ts`
+  - [x] `apps/backend/prisma/migrations/20260523123508_add_marriage_request/migration.sql` — MarriageRequestStatus enum, MarriageClassification enum, marriage_requests table + indexes
+  - [x] `apps/backend/src/marriage/constants/status-transitions.ts` — `ALLOWED_TRANSITIONS` map, `STATUS_LABELS` French labels, `CLASSIFICATION_ALLOWED_STATUSES` set
+  - [x] `apps/backend/src/marriage/dto/create-marriage-request.dto.ts` — `CreateMarriageRequestDto` (all fields optional at creation)
+  - [x] `apps/backend/src/marriage/dto/update-pastoral-notes.dto.ts` — `UpdatePastoralNotesDto`
+  - [x] `apps/backend/src/marriage/dto/update-status.dto.ts` — `UpdateStatusDto` (MarriageRequestStatus enum)
+  - [x] `apps/backend/src/marriage/dto/update-classification.dto.ts` — `UpdateClassificationDto` (MarriageClassification enum)
+  - [x] `apps/backend/src/marriage/dto/query-marriage-requests.dto.ts` — `QueryMarriageRequestsDto` (status filter + pagination)
+  - [x] `apps/backend/src/marriage/marriage.service.ts` — `MarriageService`: create, submit, findAll, findByCode, updatePastoralNotes, updateStatus, updateClassification; `generateRequestCode()`, `enforceOwnership()`, `findRequestOrThrow()`, `toResponse()`
+  - [x] `apps/backend/src/marriage/marriage.controller.ts` — `MarriageController`: 7 endpoints under `/marriage-requests`
+  - [x] `apps/backend/src/marriage/marriage.module.ts` — `MarriageModule` (imports PrismaModule, AuditModule)
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — `MarriageRequestStatus` enum, `MarriageClassification` enum, `MarriageRequest` model, `marriageRequests` relation on `Member`
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `marriageRequest` getter
+  - [x] `apps/backend/src/app.module.ts` — imports `MarriageModule`
 - Key decisions made:
-  - (fill in after phase)
+  - **requestCode format:** `MAR-YYYY-NNNNN` — same generation strategy as `memberCode` (find highest for year, increment, retry 3× on collision, timestamp fallback). DB unique constraint is the final safety net.
+  - **memberId from UserMemberLink:** `POST /marriage-requests` does NOT accept `memberId` from the client. The service resolves the actor's linked member via `userMemberLink.findFirst({ where: { userId: actorUserId } })`. If no link exists, a French 400 is thrown.
+  - **Status transition map:** `ALLOWED_TRANSITIONS` constant is the single source of truth for the state machine. Invalid transitions throw `BadRequestException` with a French message naming the current status, the target status, and listing allowed alternatives.
+  - **Submit validation:** Before transitioning DRAFT → SUBMITTED, the service validates: (1) `spouseFullName` is non-empty; (2) at least one of `spousePhone` or `spouseEmail` is present. Both checks throw French 400 errors.
+  - **MEMBER scoping:** `findAll` and `findByCode` enforce role-based data access. MEMBER role: scoped to their own requests via `userMemberLink`. Other roles (PASTOR, CHURCH_ADMIN, etc.): can see all requests.
+  - **Classification guard:** `CLASSIFICATION_ALLOWED_STATUSES` set contains UNDER_REVIEW and all subsequent statuses. Classification on DRAFT or SUBMITTED throws French 400.
+  - **Audit events:** `MARRIAGE.SUBMITTED` (on submit), `MARRIAGE.REVIEWED` (on status change), `MARRIAGE.CLASSIFIED` (on classification). All include `requestCode`, `memberCode`, old and new values. Fire-and-forget via `AuditService.log()`.
+  - **reviewedAt timestamp:** Updated on every pastoral action (notes update, status change, classification). Records the last pastoral interaction.
+  - **`toResponse()` shape:** Returns `requestCode`, `memberCode` (from joined Member), spouse fields, status, classification, pastorNotes, timestamps. Internal `id` and `memberId` are NEVER returned.
+  - **Permissions used:** `marriage.create` (create + submit + read own); `marriage.review` (notes + status); `marriage.classify` (GREEN/ORANGE/RED). No new permissions needed — all existed in Phase 3.
+  - **Terminal statuses:** REJECTED and COMPLETED have empty allowed-transitions arrays. Attempting any transition from them returns French 400 with "Ce statut est terminal" message.
 
 ---
 
