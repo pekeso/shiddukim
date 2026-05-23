@@ -70,4 +70,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get marriageRequest() {
     return this.client.marriageRequest;
   }
+
+  get appointment() {
+    return this.client.appointment;
+  }
+
+  get notification() {
+    return this.client.notification;
+  }
 }

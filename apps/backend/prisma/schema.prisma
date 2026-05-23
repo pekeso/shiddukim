@@ -111,6 +111,36 @@ enum MarriageClassification {
   RED
 }
 
+enum AppointmentStatus {
+  SCHEDULED
+  RESCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum AppointmentType {
+  PASTORAL_COUNSELING
+  MARRIAGE_REVIEW
+  GENERAL
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum NotificationProvider {
+  TWILIO
+  SMTP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User
 // A user account used for authentication.
@@ -136,6 +166,9 @@ model User {
 
   // Linked member records (set during member activation)
   memberLinks UserMemberLink[]
+
+  // Appointments where this user acts as the assigned pastor
+  appointmentsAsPastor Appointment[] @relation("AppointmentPastor")
 
   @@map("users")
 }
@@ -184,6 +217,7 @@ model Member {
   userLinks          UserMemberLink[]
   ledCommunities     Community[]      @relation("CommunityPresident")
   marriageRequests   MarriageRequest[]
+  appointments       Appointment[]
 
   // Indexes for search and duplicate detection
   @@index([lastName, firstName])
@@ -407,6 +441,8 @@ model MarriageRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  appointments Appointment[]
+
   @@index([memberId])
   @@index([status])
   @@index([createdAt])
@@ -439,4 +475,94 @@ model FileAccessLog {
   @@index([action])
   @@index([accessedAt])
   @@map("file_access_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Appointment
+// Scheduled pastoral meeting between a member and a pastor.
+// appointmentCode is the only public identifier (APT-YYYY-NNNNN).
+// pastorId is a User.id of a user with PASTOR role (optional until assigned).
+// marriageRequestId optionally links the appointment to an ongoing dossier.
+// jobId24h / jobId1h hold BullMQ job IDs so reminders can be cancelled on
+//   reschedule or cancellation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Appointment {
+  id              String @id @default(cuid())
+  appointmentCode String @unique // e.g. APT-2026-00001 — public identifier
+
+  // Requesting member
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+
+  // Assigned pastor (optional — can be assigned later)
+  pastorId String?
+  pastor   User?   @relation("AppointmentPastor", fields: [pastorId], references: [id])
+
+  // Linked marriage dossier (optional)
+  marriageRequestId String?
+  marriageRequest   MarriageRequest? @relation(fields: [marriageRequestId], references: [id])
+
+  // Classification
+  appointmentType AppointmentType
+  status          AppointmentStatus @default(SCHEDULED)
+
+  // Scheduling
+  scheduledAt DateTime
+
+  // Notes and cancellation
+  notes        String?
+  cancelReason String? // set when status → CANCELLED
+
+  // BullMQ job IDs for reminder cancellation
+  jobId24h String? // job ID for the 24h-before reminder
+  jobId1h  String? // job ID for the 1h-before reminder
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberId])
+  @@index([pastorId])
+  @@index([marriageRequestId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@map("appointments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification
+// Record of every outbound notification (email / SMS / WhatsApp).
+// Status tracks delivery lifecycle: PENDING → SENT | FAILED.
+// errorMessage stores transport errors for debugging (never returned to clients).
+// providerMessageId stores the SMTP message-id or Twilio SID for correlation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id              String @id @default(cuid())
+
+  // Recipient — linked to the User receiving the notification
+  recipientUserId String
+
+  // Delivery metadata
+  channel             NotificationChannel
+  provider            NotificationProvider
+  providerMessageId   String? // SMTP message-id or Twilio SID
+
+  // Content
+  subject String
+  message String
+
+  // Lifecycle
+  status       NotificationStatus @default(PENDING)
+  errorMessage String? // transport-level error (never exposed to clients)
+  sentAt       DateTime? // set when status → SENT
+
+  createdAt DateTime @default(now())
+
+  @@index([recipientUserId])
+  @@index([status])
+  @@index([channel])
+  @@index([createdAt])
+  @@map("notifications")
 }
