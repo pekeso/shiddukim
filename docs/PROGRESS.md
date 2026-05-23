@@ -298,12 +298,28 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 9 — Member Activation
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-09-activation` → `develop`
 - Key files created:
-  - [ ] `apps/backend/src/auth/activation/activation.service.ts`
-  - [ ] `apps/backend/src/auth/activation/activation.controller.ts`
+  - [x] `apps/backend/src/auth/activation/dto/start-activation.dto.ts` — StartActivationDto (memberCode, SHK-YYYY-NNNNN format validation)
+  - [x] `apps/backend/src/auth/activation/dto/request-otp.dto.ts` — RequestOtpDto (memberCode)
+  - [x] `apps/backend/src/auth/activation/dto/verify-activation.dto.ts` — VerifyActivationDto (memberCode, code, password, min 8 chars)
+  - [x] `apps/backend/src/auth/activation/activation.service.ts` — ActivationService: start(), requestOtp(), verify(); maskEmail() helper; transaction for User + UserMemberLink + Member.status update
+  - [x] `apps/backend/src/auth/activation/activation.controller.ts` — ActivationController: @Public() + 10 req/60 s throttle on all 3 endpoints
+- Key files updated:
+  - [x] `apps/backend/src/auth/auth.service.ts` — added public `issueTokenPair()` method so ActivationService can issue tokens without duplicating logic
+  - [x] `apps/backend/src/auth/auth.module.ts` — imports VerificationModule; registers ActivationService + ActivationController
 - Key decisions made:
-  - (fill in after phase)
+  - **Three-step flow:** `start` (eligibility + masked email) → `request-otp` (OTP send) → `verify` (OTP check + account creation + login).
+  - **Generic errors:** All ineligibility cases (member not found, suspended, deceased) return the same French generic 400 to prevent member-code enumeration. Only two distinct messages break from generic: `MSG_ALREADY_ACTIVATED` (separate UX concern) and `MSG_NO_EMAIL` (must contact secretary).
+  - **Double-activation guard:** Checked at `start` and again at `verify`. Inside the `verify` transaction a race-condition guard re-checks `UserMemberLink` before creating the user account.
+  - **DB transaction:** `prisma.client.$transaction()` wraps `user.create`, `userMemberLink.create`, and `member.update` atomically so a partial failure leaves no orphaned records.
+  - **OTP delegation:** `VerificationService.startVerification()` and `.verifyCode()` are called directly. Cooldown enforcement, attempt tracking, expiry, provider calls, `OtpVerification` persistence, and `AUTH.OTP_REQUESTED` / `AUTH.OTP_VERIFIED` audits are all handled inside `VerificationService` — no duplication in `ActivationService`.
+  - **Immediate login:** `verify` calls `AuthService.issueTokenPair()` after account creation and returns `accessToken + refreshToken` in the same response (same shape as POST /auth/login). The user does not need a separate login call.
+  - **maskEmail helper:** Preserves only the first character of the local part — `joel.mbiye@gmail.com` → `j***@gmail.com`. Domain is returned in full.
+  - **MEMBER.ACTIVATED audit:** Fired fire-and-forget after the transaction commits. `entityId` = `memberCode` (public identifier). Metadata includes the channel used.
+  - **Rate limiting:** 10 req/60 s per IP on all three endpoints (stricter than global 60/60 s; comparable to login's 5/60 s adjusted for the 3-call flow).
+  - **Password minimum:** 8 characters, enforced by `@MinLength` in `VerifyActivationDto`.
 
 ---
 
