@@ -52,6 +52,10 @@ model User {
   status UserStatus @default(ACTIVE)
   role   Role       @default(MEMBER)
 
+  // Refresh token rotation — only the hash is stored, never the raw token
+  refreshTokenHash      String?
+  refreshTokenExpiresAt DateTime?
+
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
