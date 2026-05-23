@@ -9,6 +9,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { APPOINTMENT_REMINDER_QUEUE } from './appointments.constants';
 import type { EnvConfig } from '../common/config/env.validation.js';
+import { getRedisOptions } from '../common/config/redis.config';
 
 /**
  * AppointmentsModule
@@ -33,10 +34,7 @@ import type { EnvConfig } from '../common/config/env.validation.js';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvConfig, true>) => ({
-        connection: {
-          host: config.get('REDIS_HOST', { infer: true }),
-          port: config.get('REDIS_PORT', { infer: true }),
-        },
+        connection: getRedisOptions(config),
       }),
     }),
     BullModule.registerQueue({

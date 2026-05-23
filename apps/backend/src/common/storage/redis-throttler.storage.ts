@@ -1,5 +1,6 @@
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import Redis from 'ioredis';
+import type { RedisOptions } from 'ioredis';
 
 /**
  * Redis-backed storage for @nestjs/throttler (v6+).
@@ -21,10 +22,9 @@ import Redis from 'ioredis';
 export class RedisThrottlerStorage implements ThrottlerStorage {
   readonly redis: Redis;
 
-  constructor(host: string, port: number) {
+  constructor(options: RedisOptions) {
     this.redis = new Redis({
-      host,
-      port,
+      ...options,
       // Fail fast if Redis is unreachable rather than queueing indefinitely
       lazyConnect: false,
       enableOfflineQueue: false,

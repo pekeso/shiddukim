@@ -5,6 +5,7 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
 
   // Redis
+  REDIS_URL: z.string().url().optional(),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
 

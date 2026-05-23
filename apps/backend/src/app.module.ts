@@ -17,6 +17,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { getRedisOptions } from './common/config/redis.config';
+import type { EnvConfig } from './common/config/env.validation';
 import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage';
 
 /**
@@ -60,7 +62,7 @@ import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage'
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
+      useFactory: (config: ConfigService<EnvConfig, true>) => ({
         throttlers: [
           {
             name: 'default',
@@ -68,10 +70,7 @@ import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage'
             limit: 60, // requests per window
           },
         ],
-        storage: new RedisThrottlerStorage(
-          config.get<string>('REDIS_HOST') ?? 'localhost',
-          config.get<number>('REDIS_PORT') ?? 6379,
-        ),
+        storage: new RedisThrottlerStorage(getRedisOptions(config)),
       }),
     }),
   ],
