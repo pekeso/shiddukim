@@ -11,6 +11,8 @@ import { MembersModule } from './members/members.module';
 import { CommunitiesModule } from './communities/communities.module';
 import { DocumentsModule } from './documents/documents.module';
 import { MarriageModule } from './marriage/marriage.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -46,6 +48,8 @@ import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage'
     CommunitiesModule,
     DocumentsModule,
     MarriageModule,
+    AppointmentsModule,
+    NotificationsModule,
 
     // ── Rate limiting ────────────────────────────────────────────────────────────
     // Global throttle: 60 requests per 60 seconds per IP.

@@ -48,6 +48,18 @@ export const envSchema = z.object({
   ALLOWED_FILE_TYPES: z
     .string()
     .default('image/jpeg,image/png,application/pdf'),
+
+  // SMTP (Nodemailer — used by NotificationService for email reminders)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z
+    .string()
+    .transform((v) => v === 'true')
+    .default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_ADDRESS: z.string().optional(),
+  SMTP_FROM_NAME: z.string().default('Plateforme Église'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
