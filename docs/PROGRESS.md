@@ -30,7 +30,7 @@ Each new phase conversation should start with: read this file + the relevant pha
 | Public ID format for members | SHK-YYYY-NNNNN |
 | Public ID format for marriage requests | MAR-YYYY-NNNNN |
 | Password hashing | argon2 (decide in Phase 2) |
-| PDF engine | pdfkit / puppeteer — decide in Phase 11 |
+| PDF engine | pdfkit — pure Node.js, no Chromium, decided in Phase 11 |
 | Test framework | Jest (NestJS default) |
 | OTP default channel | EMAIL |
 | Prisma version | v7 (TypeScript-native client, `prisma-client` generator) |
@@ -357,12 +357,28 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 11 — Documents & PDF Generation
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-11-pdf` → `develop`
 - Key files created:
-  - [ ] `apps/backend/src/documents/pdf/pdf.service.ts`
-  - [ ] `apps/backend/src/documents/pdf/templates/` — PDF templates
+  - [x] `apps/backend/src/documents/pdf/pdf.service.ts` — `PdfService` with `generateMarriageRequestPdf(data)` and `generateMedicalReferralPdf(data)` — pure data-in / Buffer-out, no DB
+- Key files updated:
+  - [x] `apps/backend/src/marriage/marriage.service.ts` — added `generateMarriageRequestPdf()`, `generateMedicalReferralPdf()`, `findRequestWithMemberDetails()`, `generateDocumentCode()`, `logFileAccess()` private helpers; injected `StorageService` and `PdfService`
+  - [x] `apps/backend/src/marriage/marriage.controller.ts` — added `POST /:requestCode/generate-pdf` and `POST /:requestCode/generate-medical-referral` (both require `document.generate`)
+  - [x] `apps/backend/src/marriage/marriage.module.ts` — imports `StorageModule`; provides `PdfService`
+  - [x] `apps/backend/src/documents/documents.service.ts` — added `findAll()` with RBAC scoping + pagination; updated `getSignedUrl()` with `actorRole` param + MEMBER ownership enforcement + FILE.DOWNLOADED audit; added `enforceDocumentOwnership()` private helper
+  - [x] `apps/backend/src/documents/documents.controller.ts` — added `GET /documents` endpoint; added `QueryDocumentsDto`; passed `user.role` to `getSignedUrl()`
 - Key decisions made:
-  - (fill in after phase)
+  - **PDF library: `pdfkit`** — lightweight, pure Node.js, no Chromium/browser dependency. Good for data-heavy document layouts without complex HTML templating. Installed as `pdfkit` + `@types/pdfkit`.
+  - **PdfService architecture:** Pure presentational service — accepts typed data objects (`MarriagePdfData`, `MedicalReferralPdfData`) and returns `Buffer`. No DB access. Callers are responsible for DB queries, R2 upload, Document record creation, and audit events. Fully testable in isolation.
+  - **PDF layout:** A4, pdfkit `PDFDocument` stream buffered into a `Promise<Buffer>`. French content, two-colour brand (primary `#1E3A5F`, accent `#2C7BE5`). Church header, section titles with accent underline, two-column label/value rows (`drawField()`), footer with generation timestamp.
+  - **Marriage request PDF sections:** Informations du demandeur (nom, code, communauté, date de naissance) → Informations sur le/la conjoint(e) (nom, téléphone, e-mail) → Projet matrimonial (numéro, date souhaitée, date de soumission) → Footer.
+  - **Medical referral PDF sections:** Church header → object paragraph → Informations du couple → Instructions médicales (6 bullet points: groupage, VIH, hépatites, syphilis, drépanocytose, autre) → Zone de signature du pasteur (signature line) → Zone de cachet + date boxes.
+  - **PDF orchestration in MarriageService:** Each generate method: (1) query DB with `findRequestWithMemberDetails()` including `member.community`, (2) format dates via `formatDateFr` / `formatDateTimeFr` exported from PdfService, (3) generate buffer, (4) upload via `StorageService.upload()` with `mimeType: 'application/pdf'`, (5) generate `DOC-YYYY-NNNNN` code (same 3-retry + UUID fallback pattern as DocumentsService), (6) create `Document` record (`ownerType: 'MarriageRequest'`, `generatedByUserId` set, `uploadedByUserId: null`), (7) log `FileAccessAction.GENERATE` in FileAccessLog, (8) audit `DOCUMENT.GENERATED` (fire-and-forget), (9) generate signed URL (300 s), return `{ documentCode, signedUrl, signedUrlExpiresAt }`.
+  - **Medical referral GREEN guard:** If `classification !== GREEN`, throws `BadRequestException` with French message including the current classification. Check runs before PDF generation.
+  - **GET /documents scoping:** MEMBER role: resolves `UserMemberLink` → `memberId` → queries for `ownerType: 'Member' AND ownerId = memberId` OR `ownerType: 'MarriageRequest' AND ownerId IN (member's request ids)`. Other roles with `document.view`: no filter (see all). Pagination default 20, max 100. Soft-deleted always excluded (`status: { not: DELETED }`).
+  - **Ownership on GET /documents/:documentCode/url:** Added `actorRole: string` param to `DocumentsService.getSignedUrl()`. MEMBER role calls `enforceDocumentOwnership()`: for `Member` docs checks `ownerId === link.memberId`; for `MarriageRequest` docs checks `marriageRequest.memberId === link.memberId` via DB; any other ownerType → 403 for MEMBER.
+  - **FILE.DOWNLOADED audit:** Added fire-and-forget `AuditAction.FILE.DOWNLOADED` event on every `getSignedUrl()` call (previously only FileAccessLog was written).
+  - **Role type:** `actorRole` kept as `string` (matching existing `MarriageService` + `AuthenticatedUser.role` pattern) — no `Role` enum import needed in DocumentsService.
 
 ---
 
