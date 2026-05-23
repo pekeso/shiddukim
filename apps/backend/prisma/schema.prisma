@@ -66,6 +66,32 @@ enum OtpStatus {
   FAILED
 }
 
+enum DocumentType {
+  MEMBER_PHOTO
+  MEMBER_CARD
+  MARRIAGE_REQUEST_PDF
+  MEDICAL_REFERRAL_PDF
+  SUPPORTING_DOCUMENT
+}
+
+enum DocumentStatus {
+  ACTIVE
+  DELETED
+}
+
+enum DocumentVisibility {
+  PRIVATE
+  RESTRICTED
+}
+
+enum FileAccessAction {
+  VIEW
+  DOWNLOAD
+  UPLOAD
+  DELETE
+  GENERATE
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User
 // A user account used for authentication.
@@ -268,4 +294,84 @@ model OtpVerification {
   @@index([targetValue, channel, purpose, status])
   @@index([createdAt])
   @@map("otp_verifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Document
+// Metadata record for every file stored in Cloudflare R2.
+// The raw R2 object key is stored here and NEVER returned to API clients.
+// Clients receive short-lived signed URLs via GET /documents/:documentCode/url.
+//
+// documentCode is the only public identifier — never expose `id` in responses.
+// Soft delete: set status=DELETED and deletedAt; do not remove the DB record.
+// Physical R2 deletion is deferred to a background retention policy.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Document {
+  id           String @id @default(cuid())
+  documentCode String @unique // e.g. DOC-2026-00001 — public identifier
+
+  // What kind of entity owns this document
+  ownerType String // e.g. "Member", "MarriageRequest"
+  ownerId   String // internal DB id of the owning entity (not exposed publicly)
+
+  // Classification
+  documentType DocumentType
+  visibility   DocumentVisibility @default(PRIVATE)
+  status       DocumentStatus     @default(ACTIVE)
+
+  // File metadata
+  originalFileName String
+  storedFileName   String // UUID-based name used in R2
+  r2Bucket         String // Bucket name at time of upload (for future multi-bucket support)
+  r2ObjectKey      String @unique // Full path in R2 — NEVER returned to API clients
+  mimeType         String
+  fileSize         Int // bytes
+  checksum         String // hex SHA-256 computed before upload
+
+  // Attribution
+  uploadedByUserId  String? // who uploaded the file (null for generated docs)
+  generatedByUserId String? // who triggered generation (null for user-uploaded docs)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // set on soft delete; null = active
+
+  // Access log: every VIEW/DOWNLOAD/UPLOAD/DELETE/GENERATE is recorded here
+  accessLogs FileAccessLog[]
+
+  @@index([ownerType, ownerId])
+  @@index([documentType])
+  @@index([status])
+  @@index([uploadedByUserId])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FileAccessLog
+// Immutable record of every sensitive file operation.
+// Required by security rules: log every upload, view, download, delete, generate.
+// actorUserId is nullable — system-generated access has no human actor.
+// metadata captures request context (e.g. document code, signed URL expiry).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FileAccessLog {
+  id String @id @default(cuid())
+
+  documentId   String
+  actorUserId  String? // null for system-initiated access
+  action       FileAccessAction
+  ipAddress    String?
+  userAgent    String?
+  accessedAt   DateTime         @default(now())
+  metadata     Json? // structured context (never include raw R2 keys or signed URLs)
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+  @@index([actorUserId])
+  @@index([action])
+  @@index([accessedAt])
+  @@map("file_access_logs")
 }

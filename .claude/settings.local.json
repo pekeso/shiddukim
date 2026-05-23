@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\joemb\\\\novia-tech\\\\shiddukim\\\\apps\\\\backend\\\\src\\\\prisma\")",
+      "PowerShell(docker exec shiddukim-postgres-1 cat /var/lib/postgresql/data/pg_hba.conf 2>&1)",
+      "PowerShell(docker exec shiddukim-postgres-1 psql -U church_user -d church_platform -c \"ALTER USER church_user WITH PASSWORD 'church_password';\" 2>&1)",
+      "PowerShell(docker exec shiddukim-postgres-1 psql -U church_user -c \"SELECT rolname, rolpassword FROM pg_authid WHERE rolname = 'church_user';\" 2>&1)",
+      "PowerShell(docker exec shiddukim-postgres-1 psql -U church_user -d church_platform -c \"CREATE USER testuser WITH PASSWORD 'testpass123'; GRANT ALL ON DATABASE church_platform TO testuser;\" 2>&1)",
+      "PowerShell(docker exec shiddukim-postgres-1 bash -c \"cat /var/lib/postgresql/data/pg_hba.conf | tail -5\" 2>&1)",
+      "PowerShell(Get-Process -Id 16492, 6808 -ErrorAction SilentlyContinue)",
+      "PowerShell(cd c:\\\\Users\\\\joemb\\\\novia-tech\\\\shiddukim\\\\apps\\\\backend; $env:JWT_ACCESS_SECRET=\"test-access-secret-32-chars-long\"; $env:JWT_REFRESH_SECRET=\"test-refresh-secret-32-chars!!\"; npx nest build 2>&1 | Select-Object -Last 10)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat\\(rbac\\): wire global guards, ThrottlerModule, and public routes *)",
+      "PowerShell(npx tsc --noEmit 2>&1)"
+    ]
+  }
+}

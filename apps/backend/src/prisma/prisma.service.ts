@@ -58,4 +58,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get userMemberLink() {
     return this.client.userMemberLink;
   }
+
+  get document() {
+    return this.client.document;
+  }
+
+  get fileAccessLog() {
+    return this.client.fileAccessLog;
+  }
 }
