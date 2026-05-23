@@ -89,15 +89,30 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 2 — Authentication Foundation
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-02-auth` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — User model
-  - [ ] `apps/backend/src/auth/auth.module.ts`
-  - [ ] `apps/backend/src/auth/auth.service.ts`
-  - [ ] `apps/backend/src/auth/strategies/jwt.strategy.ts`
-  - [ ] `apps/backend/src/common/services/hashing.service.ts`
+  - [x] `apps/backend/prisma/migrations/20260523102207_add_refresh_token_fields_to_user/migration.sql` — adds `refreshTokenHash`, `refreshTokenExpiresAt` to User
+  - [x] `apps/backend/src/common/services/hashing.service.ts` — argon2id `hash()` and `compare()`
+  - [x] `apps/backend/src/auth/strategies/jwt.strategy.ts` — `JwtStrategy` (Passport), `JwtPayload`, `AuthenticatedUser` interfaces
+  - [x] `apps/backend/src/auth/guards/jwt-auth.guard.ts` — `JwtAuthGuard` with French 401
+  - [x] `apps/backend/src/common/decorators/current-user.decorator.ts` — `@CurrentUser()` param decorator
+  - [x] `apps/backend/src/auth/dto/login.dto.ts` — `LoginDto` (email + password, French validation messages)
+  - [x] `apps/backend/src/auth/dto/refresh-token.dto.ts` — `RefreshTokenDto` (JWT string, French validation)
+  - [x] `apps/backend/src/auth/auth.service.ts` — `AuthService`: login, refreshToken, logout, generateAndStoreTokens
+  - [x] `apps/backend/src/auth/auth.controller.ts` — `POST /api/v1/auth/login`, `/refresh-token`, `/logout`
+  - [x] `apps/backend/src/auth/auth.module.ts` — wires all auth providers; exports `HashingService`, `JwtAuthGuard`, `JwtStrategy`
+  - [x] `apps/backend/src/app.module.ts` — imports `AuthModule`
 - Key decisions made:
-  - (fill in after phase)
+  - **Password hashing:** `argon2` (argon2id variant) — `hash()` / `compare()` in `HashingService`
+  - **Refresh token design:** Refresh token is a signed JWT (`JWT_REFRESH_SECRET`) containing `{ sub, nonce, type: "refresh" }`. The `nonce` (32 random bytes) is hashed with argon2 and stored in `User.refreshTokenHash`. This separates the token signature from the revocation mechanism.
+  - **Token rotation:** On every `refreshToken` call, a new nonce is generated, stored, and the old one is invalidated. Nonce reuse (replay attack) clears all sessions for the user.
+  - **Timing-safe login:** When the email is not found, a dummy hash comparison is still performed to prevent timing-based user enumeration.
+  - **Generic errors:** Login failure always returns `"Identifiants invalides. Veuillez réessayer."` — never reveals whether the email exists.
+  - **Access token expiry:** Configured via `JWT_ACCESS_EXPIRES_IN` (default `15m`), passed as seconds to `signAsync`.
+  - **Refresh token expiry:** Configured via `JWT_REFRESH_EXPIRES_IN` (default `7d`), stored in `User.refreshTokenExpiresAt` for fast server-side rejection.
+  - **JwtModule:** Registered without a default secret — access and refresh tokens use different secrets per-call.
+  - **Installed packages:** `argon2`, `@nestjs/jwt`, `@nestjs/passport`, `passport`, `passport-jwt`, `@types/passport-jwt`, `@types/passport`
 
 ---
 
