@@ -383,15 +383,40 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 12 — Appointments
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-12-appointments` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — Appointment model
-  - [ ] `apps/backend/src/appointments/appointments.module.ts`
-  - [ ] `apps/backend/src/appointments/appointments.service.ts`
-  - [ ] `apps/backend/src/appointments/appointments.controller.ts`
-  - [ ] `apps/backend/src/notifications/notifications.service.ts`
+  - [x] `apps/backend/prisma/migrations/20260523130810_add_appointment_notification/migration.sql` — 5 new enums + Appointment + Notification tables
+  - [x] `apps/backend/src/appointments/appointments.constants.ts` — `APPOINTMENT_REMINDER_QUEUE` constant
+  - [x] `apps/backend/src/appointments/dto/create-appointment.dto.ts` — CreateAppointmentDto (type, scheduledAt, notes, marriageRequestCode, pastorId)
+  - [x] `apps/backend/src/appointments/dto/reschedule-appointment.dto.ts` — RescheduleAppointmentDto
+  - [x] `apps/backend/src/appointments/dto/cancel-appointment.dto.ts` — CancelAppointmentDto (required reason ≥5 chars)
+  - [x] `apps/backend/src/appointments/dto/query-appointments.dto.ts` — QueryAppointmentsDto (status, page, limit)
+  - [x] `apps/backend/src/appointments/appointments.service.ts` — AppointmentsService: create, findAll, findByCode, reschedule, cancel; generateAppointmentCode; queueReminders; cancelReminderJobs
+  - [x] `apps/backend/src/appointments/appointments.controller.ts` — AppointmentsController: 5 endpoints under /appointments
+  - [x] `apps/backend/src/appointments/appointment-reminder.processor.ts` — AppointmentReminderProcessor (BullMQ worker)
+  - [x] `apps/backend/src/appointments/appointments.module.ts` — AppointmentsModule (BullMQ + Redis + NotificationsModule)
+  - [x] `apps/backend/src/notifications/notifications.service.ts` — NotificationsService (Nodemailer + Notification table)
+  - [x] `apps/backend/src/notifications/notifications.module.ts` — NotificationsModule (exports NotificationsService)
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — 5 new enums, Appointment + Notification models, relations on Member/User/MarriageRequest
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `appointment` and `notification` getters
+  - [x] `apps/backend/src/app.module.ts` — imports AppointmentsModule + NotificationsModule
+  - [x] `apps/backend/src/common/config/env.validation.ts` — added SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM_ADDRESS, SMTP_FROM_NAME
+  - [x] `.env.example` — SMTP vars documented
 - Key decisions made:
-  - (fill in after phase)
+  - **appointmentCode format:** `APT-YYYY-NNNNN` — same generation strategy as `memberCode` / `requestCode` (find highest for year, increment, retry 3× on collision, UUID-slice fallback). DB unique constraint is the final safety net.
+  - **BullMQ job design:** Two delayed jobs are queued on creation: 24h-before and 1h-before `scheduledAt`. Job ID format: `reminder-24h-{appointmentId}` and `reminder-1h-{appointmentId}`. Job IDs are stored on the Appointment record (`jobId24h`, `jobId1h`) so they can be cancelled on reschedule or cancellation.
+  - **Job cancellation:** On reschedule and cancel, `cancelReminderJobs()` fetches each stored job by ID and calls `job.remove()`. Errors are caught and logged — the main request never fails due to queue unavailability.
+  - **Re-queue on reschedule:** After cancelling old jobs, new ones are queued for the updated `scheduledAt`. The status transitions to `RESCHEDULED`.
+  - **NotificationService design:** Creates a `Notification` record in `PENDING` state before attempting the SMTP send. On success: sets `status=SENT`, `providerMessageId=<SMTP message-id>`, `sentAt=now`. On failure: sets `status=FAILED`, `errorMessage=<transport error>`. Failures are NEVER rethrown — callers fire-and-forget safely.
+  - **SMTP configuration:** Nodemailer `createTransport` is called once in the constructor. If `SMTP_HOST` or `SMTP_USER` is missing, a warning is logged and the transporter is set to null. `sendEmail` then immediately marks the Notification as FAILED with a clear message.
+  - **Reminder email format (French):** Subject: `"Rappel de rendez-vous — Plateforme Église"`. Body includes delay label (24 heures / 1 heure), date (`fr-FR` long weekday), time (24h format), appointment code. Signed "La Plateforme Église".
+  - **Role scoping for GET /appointments:** MEMBER → `memberId` from UserMemberLink; PASTOR → `pastorId = actorUserId`; all other roles → no filter (see all).
+  - **Cancel ownership:** MEMBER role can only cancel their own appointments (ownership checked via UserMemberLink). All roles with `appointment.create` can cancel.
+  - **Terminal status guard:** CANCELLED and COMPLETED appointments cannot be rescheduled or cancelled again — throws French 400.
+  - **BullMQ Redis config:** `BullModule.forRootAsync` uses the same `REDIS_HOST` / `REDIS_PORT` as the throttler. One Redis connection shared by rate limiting and job queuing.
+  - **Installed packages:** `@nestjs/bullmq`, `bullmq`, `nodemailer`, `@types/nodemailer`
 
 ---
 
