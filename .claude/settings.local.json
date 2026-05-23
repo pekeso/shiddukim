@@ -15,7 +15,10 @@
       "Bash(npx tsc *)",
       "Bash(git add *)",
       "Bash(git commit -m 'feat\\(rbac\\): wire global guards, ThrottlerModule, and public routes *)",
-      "PowerShell(npx tsc --noEmit 2>&1)"
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "Bash(npx prisma *)",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\joemb\\\\novia-tech\\\\shiddukim\\\\apps\\\\backend\\\\src\\\\marriage\\\\constants\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\joemb\\\\novia-tech\\\\shiddukim\\\\apps\\\\backend\\\\src\\\\marriage\\\\dto\")"
     ]
   }
 }

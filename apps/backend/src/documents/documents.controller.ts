@@ -17,6 +17,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Request } from 'express';
+import { IsEnum, IsOptional, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 import { DocumentsService } from './documents.service.js';
 import { UploadDocumentDto } from './dto/upload-document.dto.js';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
@@ -26,7 +28,34 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import type {
   DocumentResponse,
   DocumentWithUrlResponse,
+  PaginatedDocuments,
+  QueryDocumentsParams,
 } from './documents.service.js';
+import { DocumentType } from '../../generated/prisma/client.js';
+
+// ── Query DTO for GET /documents ──────────────────────────────────────────────
+
+class QueryDocumentsDto implements QueryDocumentsParams {
+  @IsOptional()
+  @IsEnum(DocumentType)
+  documentType?: DocumentType;
+
+  @IsOptional()
+  ownerType?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
 
 /**
  * DocumentsController — REST endpoints for file upload and signed URL access.
@@ -53,6 +82,40 @@ import type {
 @Controller('documents')
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
+
+  // ── GET /documents ────────────────────────────────────────────────────────
+
+  /**
+   * Lists documents visible to the authenticated user.
+   *
+   * Scoping rules:
+   *   - MEMBER: only sees documents owned by their linked Member record and
+   *     MarriageRequest records. Returns empty list if no member link.
+   *   - All other roles with document.view: see all documents.
+   *
+   * Optional query params:
+   *   - documentType: filter by DocumentType enum value
+   *   - ownerType: filter by ownerType string (e.g. "Member", "MarriageRequest")
+   *   - page: page number (default 1)
+   *   - limit: items per page (default 20, max 100)
+   *
+   * Returns: { data, total, page, limit, pages }
+   * HTTP 200 OK.
+   */
+  @Get()
+  @RequirePermissions(Permission.DOCUMENT_VIEW)
+  async findAll(
+    @Query() query: QueryDocumentsDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<PaginatedDocuments> {
+    return this.documentsService.findAll(
+      query,
+      user.id,
+      user.role,
+      this.extractCtx(req),
+    );
+  }
 
   // ── POST /documents/upload ─────────────────────────────────────────────────
 
@@ -162,6 +225,7 @@ export class DocumentsController {
     return this.documentsService.getSignedUrl(
       documentCode,
       user.id,
+      user.role,
       this.extractCtx(req),
       clampedExpiry,
     );

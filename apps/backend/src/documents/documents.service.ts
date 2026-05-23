@@ -44,6 +44,22 @@ export interface DocumentWithUrlResponse extends DocumentResponse {
   signedUrlExpiresAt: string;
 }
 
+export interface PaginatedDocuments {
+  data: DocumentResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+/** Query parameters for listing documents. */
+export interface QueryDocumentsParams {
+  page?: number;
+  limit?: number;
+  documentType?: DocumentType;
+  ownerType?: string;
+}
+
 // ─── Folder mapping per document type ────────────────────────────────────────
 
 const DOCUMENT_TYPE_FOLDER: Record<DocumentType, string> = {
@@ -178,6 +194,95 @@ export class DocumentsService {
     return this.toResponse(document);
   }
 
+  // ── List documents ─────────────────────────────────────────────────────────
+
+  /**
+   * Returns a paginated list of documents visible to the actor.
+   *
+   * Scoping rules:
+   *   - MEMBER role: only sees documents owned by their linked Member record,
+   *     plus documents owned by their MarriageRequest records.
+   *   - All other roles with document.view permission: see all documents.
+   *
+   * Soft-deleted documents are always excluded.
+   *
+   * @throws (never) — returns empty list if MEMBER has no linked member.
+   */
+  async findAll(
+    query: QueryDocumentsParams,
+    actorUserId: string,
+    actorRole: string,
+    ctx?: RequestContext,
+  ): Promise<PaginatedDocuments> {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 20, 100);
+    const skip = (page - 1) * limit;
+
+    // Base filter: never return deleted documents
+    const where: Record<string, unknown> = {
+      status: { not: DocumentStatus.DELETED },
+    };
+
+    if (query.documentType) {
+      where['documentType'] = query.documentType;
+    }
+
+    if (query.ownerType) {
+      where['ownerType'] = query.ownerType;
+    }
+
+    // MEMBER scoping: resolve their linked member + marriage requests
+    if (actorRole === 'MEMBER') {
+      const link = await this.prisma.userMemberLink.findFirst({
+        where: { userId: actorUserId },
+        select: { memberId: true },
+      });
+
+      if (!link) {
+        return { data: [], total: 0, page, limit, pages: 0 };
+      }
+
+      // Fetch their marriage request IDs
+      const marriageRequests = await this.prisma.marriageRequest.findMany({
+        where: { memberId: link.memberId },
+        select: { id: true },
+      });
+
+      const marriageRequestIds = marriageRequests.map((r) => r.id);
+
+      // Documents owned by this member OR by their marriage requests
+      where['OR'] = [
+        { ownerType: 'Member', ownerId: link.memberId },
+        ...(marriageRequestIds.length > 0
+          ? [
+              {
+                ownerType: 'MarriageRequest',
+                ownerId: { in: marriageRequestIds },
+              },
+            ]
+          : []),
+      ];
+    }
+
+    const [documents, total] = await Promise.all([
+      this.prisma.document.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.document.count({ where }),
+    ]);
+
+    return {
+      data: documents.map((d) => this.toResponse(d)),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
   // ── Get metadata ───────────────────────────────────────────────────────────
 
   /**
@@ -210,24 +315,34 @@ export class DocumentsService {
   /**
    * Returns document metadata + a short-lived signed URL for file access.
    *
-   * Called ONLY after RBAC + ownership checks have passed (enforced by controller).
+   * Ownership enforcement:
+   *   - MEMBER role: may only access documents owned by their linked Member
+   *     record or by their MarriageRequest records.
+   *   - All other roles with document.view permission: may access any document.
    *
    * Flow:
    *   1. Load Document record.
-   *   2. (Ownership check is the controller's responsibility via @CurrentUser.)
+   *   2. Enforce ownership if actorRole is MEMBER.
    *   3. Generate signed URL via StorageService.
-   *   4. Log DOWNLOAD access to FileAccessLog.
+   *   4. Log FILE.DOWNLOADED to FileAccessLog.
    *   5. Return metadata + signedUrl (no r2ObjectKey).
    *
-   * @throws NotFoundException if document not found or soft-deleted.
+   * @throws NotFoundException  if document not found or soft-deleted.
+   * @throws ForbiddenException if MEMBER tries to access another member's doc.
    */
   async getSignedUrl(
     documentCode: string,
     actorUserId: string,
+    actorRole: string,
     ctx?: RequestContext,
     expiresInSeconds?: number,
   ): Promise<DocumentWithUrlResponse> {
     const document = await this.findActiveDocument(documentCode);
+
+    // Ownership check for MEMBER role
+    if (actorRole === 'MEMBER') {
+      await this.enforceDocumentOwnership(document, actorUserId, documentCode);
+    }
 
     // Generate signed URL (StorageService handles the R2 API call)
     const signedUrl = await this.storage.getSignedUrl(
@@ -239,7 +354,7 @@ export class DocumentsService {
     const expiry = expiresInSeconds ?? 300;
     const expiresAt = new Date(Date.now() + expiry * 1000).toISOString();
 
-    // Log DOWNLOAD access — signed URL itself is NOT logged (it expires)
+    // Log FILE.DOWNLOADED access — signed URL itself is NOT logged (it expires)
     await this.logAccess({
       documentId: document.id,
       actorUserId,
@@ -249,6 +364,21 @@ export class DocumentsService {
         documentCode,
         expiresInSeconds: expiry,
       },
+    });
+
+    // Audit FILE.DOWNLOADED (fire-and-forget)
+    this.audit.log({
+      actorUserId,
+      action: AuditAction.FILE.DOWNLOADED,
+      entityType: 'Document',
+      entityId: documentCode,
+      metadata: {
+        documentType: document.documentType,
+        ownerType: document.ownerType,
+        expiresInSeconds: expiry,
+      },
+      ipAddress: ctx?.ipAddress,
+      userAgent: ctx?.userAgent,
     });
 
     return {
@@ -306,6 +436,68 @@ export class DocumentsService {
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Enforces ownership for a MEMBER actor accessing a document.
+   *
+   * Rules:
+   *   - ownerType === 'Member':          ownerId must equal actor's linked memberId.
+   *   - ownerType === 'MarriageRequest': the marriage request's memberId must equal
+   *                                      actor's linked memberId.
+   *   - Other ownerTypes:                denied for MEMBER role.
+   *
+   * @throws ForbiddenException — if the actor does not own this document.
+   */
+  private async enforceDocumentOwnership(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    document: Record<string, any>,
+    actorUserId: string,
+    documentCode: string,
+  ): Promise<void> {
+    const link = await this.prisma.userMemberLink.findFirst({
+      where: { userId: actorUserId },
+      select: { memberId: true },
+    });
+
+    if (!link) {
+      throw new ForbiddenException(
+        `Vous n'êtes pas autorisé à accéder au document ${documentCode}.`,
+      );
+    }
+
+    const { ownerType, ownerId } = document as {
+      ownerType: string;
+      ownerId: string;
+    };
+
+    if (ownerType === 'Member') {
+      if (ownerId !== link.memberId) {
+        throw new ForbiddenException(
+          `Vous n'êtes pas autorisé à accéder au document ${documentCode}.`,
+        );
+      }
+      return;
+    }
+
+    if (ownerType === 'MarriageRequest') {
+      const request = await this.prisma.marriageRequest.findFirst({
+        where: { id: ownerId, memberId: link.memberId },
+        select: { id: true },
+      });
+
+      if (!request) {
+        throw new ForbiddenException(
+          `Vous n'êtes pas autorisé à accéder au document ${documentCode}.`,
+        );
+      }
+      return;
+    }
+
+    // Any other ownerType — deny access for MEMBER role
+    throw new ForbiddenException(
+      `Vous n'êtes pas autorisé à accéder au document ${documentCode}.`,
+    );
+  }
 
   /**
    * Loads a Document by code, throwing NotFoundException if not found or deleted.

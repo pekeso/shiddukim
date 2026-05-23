@@ -24,6 +24,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import type {
   MarriageRequestResponse,
   PaginatedMarriageRequests,
+  GeneratedDocumentResponse,
 } from './marriage.service';
 
 /**
@@ -210,6 +211,76 @@ export class MarriageController {
     return this.marriageService.updateClassification(
       requestCode,
       dto,
+      user.id,
+      {
+        ipAddress: extractIp(req),
+        userAgent: req.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  /**
+   * POST /api/v1/marriage-requests/:requestCode/generate-pdf
+   *
+   * Generates the marriage request summary PDF and stores it in R2.
+   * Returns a short-lived signed URL (300 s) for immediate download.
+   *
+   * Flow:
+   *   1. Loads the marriage request with member data.
+   *   2. Generates the PDF buffer via PdfService.
+   *   3. Uploads to R2 in folder "marriage/requests/".
+   *   4. Creates a Document record (documentType: MARRIAGE_REQUEST_PDF).
+   *   5. Audits DOCUMENT.GENERATED.
+   *   6. Returns { documentCode, signedUrl, signedUrlExpiresAt }.
+   *
+   * Requires: document.generate permission (PASTOR, CHURCH_ADMIN, SUPER_ADMIN)
+   * HTTP 201 Created.
+   */
+  @Post(':requestCode/generate-pdf')
+  @RequirePermissions(Permission.DOCUMENT_GENERATE)
+  @HttpCode(HttpStatus.CREATED)
+  async generatePdf(
+    @Param('requestCode') requestCode: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<GeneratedDocumentResponse> {
+    return this.marriageService.generateMarriageRequestPdf(
+      requestCode,
+      user.id,
+      {
+        ipAddress: extractIp(req),
+        userAgent: req.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  /**
+   * POST /api/v1/marriage-requests/:requestCode/generate-medical-referral
+   *
+   * Generates the medical referral letter PDF and stores it in R2.
+   * ONLY allowed when classification === GREEN. Returns 400 otherwise.
+   *
+   * Flow:
+   *   1. Validates classification is GREEN.
+   *   2. Generates the PDF buffer via PdfService.
+   *   3. Uploads to R2 in folder "marriage/referrals/".
+   *   4. Creates a Document record (documentType: MEDICAL_REFERRAL_PDF).
+   *   5. Audits DOCUMENT.GENERATED.
+   *   6. Returns { documentCode, signedUrl, signedUrlExpiresAt }.
+   *
+   * Requires: document.generate permission (PASTOR, CHURCH_ADMIN, SUPER_ADMIN)
+   * HTTP 201 Created.
+   */
+  @Post(':requestCode/generate-medical-referral')
+  @RequirePermissions(Permission.DOCUMENT_GENERATE)
+  @HttpCode(HttpStatus.CREATED)
+  async generateMedicalReferral(
+    @Param('requestCode') requestCode: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<GeneratedDocumentResponse> {
+    return this.marriageService.generateMedicalReferralPdf(
+      requestCode,
       user.id,
       {
         ipAddress: extractIp(req),
