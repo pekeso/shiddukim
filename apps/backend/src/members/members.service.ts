@@ -1,15 +1,37 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../common/constants/audit-actions';
+import { StorageService } from '../storage/storage.service';
+import {
+  DocumentType,
+  DocumentStatus,
+  DocumentVisibility,
+  FileAccessAction,
+} from '../../generated/prisma/client.js';
 import type { CreateMemberDto } from './dto/create-member.dto';
 import type { UpdateMemberDto } from './dto/update-member.dto';
 import type { QueryMembersDto } from './dto/query-members.dto';
 import type { RequestContext } from '../auth/auth.service';
 import type { Prisma } from '../../generated/prisma/client.js';
 
-// ─── Response shape (never exposes database id) ───────────────────────────────
+// ─── Photo upload / retrieval limits ─────────────────────────────────────────
+
+/** Member photos: only JPEG and PNG are accepted. */
+const PHOTO_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'] as const;
+
+/** Maximum size for member profile photos (5 MB). */
+const PHOTO_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
+// ─── Response shapes ──────────────────────────────────────────────────────────
 
 export interface MemberResponse {
   memberCode: string;
@@ -49,6 +71,20 @@ export interface PaginatedMembers {
   pages: number;
 }
 
+/** Returned after a successful photo upload. Never includes r2ObjectKey. */
+export interface PhotoUploadResponse {
+  documentCode: string;
+  mimeType: string;
+  fileSize: number;
+}
+
+/** Returned when a member's photo signed URL is requested. */
+export interface PhotoSignedUrlResponse {
+  signedUrl: string;
+  /** ISO 8601 timestamp — when the signed URL expires. */
+  expiresAt: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -58,6 +94,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   // ── Create ─────────────────────────────────────────────────────────────────
@@ -309,6 +346,218 @@ export class MembersService {
     return dataUrl;
   }
 
+  // ── Photo upload ───────────────────────────────────────────────────────────
+
+  /**
+   * Uploads a profile photo for a church member.
+   *
+   * Flow:
+   *   1. Verify the member exists.
+   *   2. Validate the file (JPEG / PNG only, max 5 MB).
+   *   3. Upload to R2 via StorageService (folder: members/photos).
+   *   4. Generate a unique documentCode (DOC-YYYY-NNNNN).
+   *   5. Create a Document record (documentType: MEMBER_PHOTO).
+   *   6. Update Member.photoDocumentId to point to the new document.
+   *   7. Write a FileAccessLog entry (UPLOAD action).
+   *   8. Fire-and-forget AuditLog (FILE.UPLOADED).
+   *   9. Return document metadata — never the r2ObjectKey.
+   *
+   * If the member already has a photo, the reference is updated to the new one.
+   * The old Document record is kept (soft-delete deferred to retention policy).
+   *
+   * @throws NotFoundException    — member not found.
+   * @throws BadRequestException  — invalid file type or size.
+   * @throws InternalServerError  — R2 upload failure (thrown by StorageService).
+   */
+  async uploadPhoto(
+    memberCode: string,
+    file: Express.Multer.File,
+    actorUserId: string,
+    ctx?: RequestContext,
+  ): Promise<PhotoUploadResponse> {
+    // 1. Verify member exists and get internal id
+    const member = await this.findMemberOrThrow(memberCode);
+
+    // 2. Validate file type and size (stricter than global StorageService rules)
+    this.validatePhotoFile(file);
+
+    // 3. Upload to R2
+    const uploadResult = await this.storage.upload({
+      buffer: file.buffer,
+      folder: 'members/photos',
+      mimeType: file.mimetype,
+      originalFileName: file.originalname,
+      uploadedByUserId: actorUserId,
+    });
+
+    // 4. Generate unique document code
+    const documentCode = await this.generateDocumentCode();
+
+    // 5. Derive stored file name from the R2 object key (UUID.ext portion)
+    const keyParts = uploadResult.r2ObjectKey.split('/');
+    const storedFileName =
+      keyParts[keyParts.length - 1] ?? `${randomUUID()}.jpg`;
+
+    // 6. Create Document record in PostgreSQL
+    const document = await this.prisma.document.create({
+      data: {
+        documentCode,
+        ownerType: 'Member',
+        ownerId: member.id, // internal DB id — never returned to clients
+        documentType: DocumentType.MEMBER_PHOTO,
+        visibility: DocumentVisibility.PRIVATE,
+        status: DocumentStatus.ACTIVE,
+        originalFileName: file.originalname,
+        storedFileName,
+        r2Bucket: uploadResult.bucket,
+        r2ObjectKey: uploadResult.r2ObjectKey, // NEVER returned to clients
+        mimeType: uploadResult.mimeType,
+        fileSize: uploadResult.fileSize,
+        checksum: uploadResult.checksum,
+        uploadedByUserId: actorUserId,
+        generatedByUserId: null,
+      },
+    });
+
+    // 7. Update Member.photoDocumentId to reference the new Document
+    await this.prisma.member.update({
+      where: { memberCode },
+      data: { photoDocumentId: document.id },
+    });
+
+    // 8. Log file access (UPLOAD)
+    await this.logFileAccess({
+      documentId: document.id,
+      actorUserId,
+      action: FileAccessAction.UPLOAD,
+      ctx,
+      metadata: {
+        documentCode,
+        memberCode,
+        mimeType: uploadResult.mimeType,
+        fileSize: uploadResult.fileSize,
+      },
+    });
+
+    // 9. Audit — fire-and-forget
+    this.audit.log({
+      actorUserId,
+      action: AuditAction.FILE.UPLOADED,
+      entityType: 'Document',
+      entityId: documentCode,
+      metadata: {
+        documentType: DocumentType.MEMBER_PHOTO,
+        memberCode,
+        fileSize: uploadResult.fileSize,
+        mimeType: uploadResult.mimeType,
+      },
+      ipAddress: ctx?.ipAddress,
+      userAgent: ctx?.userAgent,
+    });
+
+    this.logger.log(
+      `[MembersService] Photo uploadée pour le fidèle ${memberCode}: ${documentCode}`,
+    );
+
+    return {
+      documentCode,
+      mimeType: uploadResult.mimeType,
+      fileSize: uploadResult.fileSize,
+    };
+  }
+
+  // ── Photo retrieval ────────────────────────────────────────────────────────
+
+  /**
+   * Returns a short-lived signed URL for a member's profile photo.
+   *
+   * Authorization rules:
+   *   - MEMBER role: can only access their own photo (verified via UserMemberLink).
+   *   - All other roles (SUPER_ADMIN, CHURCH_ADMIN, SECRETARY, PASTOR, COMMUNITY_LEADER):
+   *     can access any member's photo.
+   *
+   * Flow:
+   *   1. Verify the member exists.
+   *   2. Check the member has a photo (404 if not).
+   *   3. Enforce ownership for MEMBER role.
+   *   4. Load the Document record.
+   *   5. Generate a signed URL (default 300s expiry) via StorageService.
+   *   6. Write a FileAccessLog entry (VIEW action).
+   *   7. Return { signedUrl, expiresAt } — never the r2ObjectKey.
+   *
+   * @throws NotFoundException   — member not found or has no photo.
+   * @throws ForbiddenException  — MEMBER trying to access another member's photo.
+   */
+  async getPhotoSignedUrl(
+    memberCode: string,
+    actorUserId: string,
+    actorRole: string,
+    ctx?: RequestContext,
+  ): Promise<PhotoSignedUrlResponse> {
+    // 1. Verify member exists
+    const member = await this.findMemberOrThrow(memberCode);
+
+    // 2. Check the member has an uploaded photo
+    if (!member.photoDocumentId) {
+      throw new NotFoundException(
+        `Le fidèle ${memberCode} n'a pas encore de photo de profil.`,
+      );
+    }
+
+    // 3. MEMBER role: enforce ownership via UserMemberLink
+    if (actorRole === 'MEMBER') {
+      const link = await this.prisma.userMemberLink.findFirst({
+        where: { userId: actorUserId, memberId: member.id },
+        select: { id: true },
+      });
+
+      if (!link) {
+        throw new ForbiddenException(
+          "Vous n'êtes pas autorisé à accéder à la photo de ce fidèle.",
+        );
+      }
+    }
+
+    // 4. Load the Document record
+    const document = await this.prisma.document.findUnique({
+      where: { id: member.photoDocumentId },
+    });
+
+    if (!document || document.status === DocumentStatus.DELETED) {
+      throw new NotFoundException(
+        `La photo de profil du fidèle ${memberCode} est introuvable.`,
+      );
+    }
+
+    // 5. Generate signed URL (300s default — private bucket, access-controlled)
+    const expiresInSeconds = 300;
+    const signedUrl = await this.storage.getSignedUrl(
+      document.r2ObjectKey,
+      expiresInSeconds,
+    );
+    const expiresAt = new Date(
+      Date.now() + expiresInSeconds * 1000,
+    ).toISOString();
+
+    // 6. Log file access (VIEW) — signed URL itself is NOT logged
+    await this.logFileAccess({
+      documentId: document.id,
+      actorUserId,
+      action: FileAccessAction.VIEW,
+      ctx,
+      metadata: {
+        documentCode: document.documentCode,
+        memberCode,
+      },
+    });
+
+    this.logger.log(
+      `[MembersService] URL signée générée pour la photo de ${memberCode} (acteur: ${actorUserId})`,
+    );
+
+    return { signedUrl, expiresAt };
+  }
+
   // ── Member code generation ─────────────────────────────────────────────────
 
   /**
@@ -434,11 +683,136 @@ export class MembersService {
     return warnings;
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Loads a member by memberCode, returning the full Prisma record (including
+   * internal `id`). Throws NotFoundException if not found.
+   * Used internally for operations that need the internal id (e.g. photo upload).
+   */
+  private async findMemberOrThrow(memberCode: string) {
+    const member = await this.prisma.member.findUnique({
+      where: { memberCode },
+    });
+    if (!member) {
+      throw new NotFoundException(
+        `Aucun fidèle trouvé avec le code ${memberCode}.`,
+      );
+    }
+    return member;
+  }
+
+  /**
+   * Validates that the uploaded file is an accepted image type and within
+   * the photo size limit (5 MB).
+   *
+   * Photo rules (stricter than the global StorageService allow-list):
+   *   - Only image/jpeg and image/png are accepted (no PDF).
+   *   - Max 5 MB (global StorageService limit is 10 MB).
+   *
+   * @throws BadRequestException on type or size violation.
+   */
+  private validatePhotoFile(file: Express.Multer.File): void {
+    if (
+      !PHOTO_ALLOWED_MIME_TYPES.includes(
+        file.mimetype as 'image/jpeg' | 'image/png',
+      )
+    ) {
+      throw new BadRequestException(
+        `Type de fichier non autorisé pour une photo: "${file.mimetype}". ` +
+          `Seuls les formats JPEG et PNG sont acceptés.`,
+      );
+    }
+
+    if (file.size > PHOTO_MAX_FILE_SIZE_BYTES) {
+      const actualMb = (file.size / 1024 / 1024).toFixed(2);
+      throw new BadRequestException(
+        `Photo trop volumineuse: ${actualMb} Mo. ` +
+          `La taille maximale autorisée est de 5 Mo.`,
+      );
+    }
+  }
+
+  /**
+   * Generates a unique document code: DOC-YYYY-NNNNN.
+   * Mirrors the same strategy used in DocumentsService.
+   * Retries up to 3 times on race collision; falls back to a UUID suffix.
+   */
+  private async generateDocumentCode(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `DOC-${year}-`;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const last = await this.prisma.document.findFirst({
+        where: { documentCode: { startsWith: prefix } },
+        orderBy: { documentCode: 'desc' },
+        select: { documentCode: true },
+      });
+
+      let nextSeq = 1;
+      if (last) {
+        const parts = last.documentCode.split('-');
+        const lastSeq = parseInt(parts[2] ?? '0', 10);
+        nextSeq = isNaN(lastSeq) ? 1 : lastSeq + 1;
+      }
+
+      const code = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+
+      const exists = await this.prisma.document.findUnique({
+        where: { documentCode: code },
+      });
+      if (!exists) return code;
+
+      this.logger.warn(
+        `[MembersService] Collision sur le code document ${code}, nouvel essai…`,
+      );
+    }
+
+    return `${prefix}${randomUUID().split('-')[0]}`;
+  }
+
+  /**
+   * Writes a FileAccessLog entry. Never throws — file access tracking must not
+   * crash the main request flow.
+   *
+   * Follows the same fire-and-catch pattern as DocumentsService.logAccess().
+   */
+  private async logFileAccess(params: {
+    documentId: string;
+    actorUserId: string;
+    action: FileAccessAction;
+    ctx?: RequestContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    metadata?: Record<string, any>;
+  }): Promise<void> {
+    try {
+      // JSON round-trip strips undefined values and satisfies Prisma's
+      // InputJsonValue type (same pattern used in AuditService and DocumentsService).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const safeMetadata: any = params.metadata
+        ? JSON.parse(JSON.stringify(params.metadata))
+        : undefined;
+
+      await this.prisma.fileAccessLog.create({
+        data: {
+          documentId: params.documentId,
+          actorUserId: params.actorUserId,
+          action: params.action,
+          ipAddress: params.ctx?.ipAddress ?? null,
+          userAgent: params.ctx?.userAgent ?? null,
+          metadata: safeMetadata,
+        },
+      });
+    } catch (err: unknown) {
+      this.logger.error(
+        `[MembersService] Impossible d'enregistrer l'accès au fichier: ${String(err)}`,
+      );
+    }
+  }
 
   /**
    * Maps a Prisma Member record to a safe API response shape.
-   * Never exposes the internal database `id` field.
+   * Never exposes the internal database `id` or `photoDocumentId` fields.
    */
   private toResponse(member: {
     memberCode: string;

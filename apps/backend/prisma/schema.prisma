@@ -143,8 +143,10 @@ model Member {
   phone        String?
   email        String?
 
-  // Photo — stored as an R2 object key, never a public URL
-  photoUrl String?
+  // Photo — references the Document record for the member's profile photo.
+  // Stores the internal Document.id (never returned to API clients).
+  // Null means no photo has been uploaded yet.
+  photoDocumentId String?
 
   // Community assignment
   communityId String?
