@@ -1,0 +1,83 @@
+// Shiddukim — Plateforme de Gestion des Fidèles
+// Prisma v7 schema — database URL is in prisma.config.ts (for migrations)
+// and passed via PrismaPg adapter at runtime. Skeleton models expanded in later phases.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum Role {
+  SUPER_ADMIN
+  CHURCH_ADMIN
+  SECRETARY
+  PASTOR
+  COMMUNITY_LEADER
+  MEMBER
+}
+
+enum MemberStatus {
+  CREATED
+  ACTIVATED
+  SUSPENDED
+  DECEASED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User
+// A user account used for authentication.
+// Separate from the church member record (see Member).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  phone        String?    @unique
+  passwordHash String
+
+  status UserStatus @default(ACTIVE)
+  role   Role       @default(MEMBER)
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Member
+// The official church identity record for a person.
+// Expanded in Phase 6.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Member {
+  id         String @id @default(cuid())
+  memberCode String @unique // e.g. SHK-2026-00001
+
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+
+  status MemberStatus @default(CREATED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("members")
+}
