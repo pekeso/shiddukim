@@ -237,15 +237,36 @@ Each new phase conversation should start with: read this file + the relevant pha
 ---
 
 ### Phase 7 — File Storage (R2)
-- Status: ⬜ Not started
+- Status: ✅ Complete
+- Branch merged: `feature/phase-07-storage` → `develop`
 - Key files created:
-  - [ ] `apps/backend/prisma/migrations/...` — Document, FileAccessLog models
-  - [ ] `apps/backend/src/storage/storage.module.ts`
-  - [ ] `apps/backend/src/storage/storage.service.ts`
-  - [ ] `apps/backend/src/storage/r2.client.ts`
-  - [ ] `apps/backend/src/documents/documents.module.ts`
+  - [x] `apps/backend/prisma/migrations/20260523120041_add_document_fileaccesslog/migration.sql` — Document + FileAccessLog tables, 4 new enums
+  - [x] `apps/backend/src/storage/r2.client.ts` — `R2Client` (S3Client for Cloudflare R2); startup HeadBucket health check (warn, don't crash)
+  - [x] `apps/backend/src/storage/storage.service.ts` — `StorageService`: upload (MIME + size validation, SHA-256, UUID key), getSignedUrl, deleteObject
+  - [x] `apps/backend/src/storage/storage.module.ts` — `StorageModule` (exports StorageService)
+  - [x] `apps/backend/src/documents/dto/upload-document.dto.ts` — `UploadDocumentDto` (documentType, ownerType, ownerId, notes)
+  - [x] `apps/backend/src/documents/documents.service.ts` — `DocumentsService`: upload, findByCode, getSignedUrl, softDelete; DocumentResponse (no r2ObjectKey), FileAccessLog writes
+  - [x] `apps/backend/src/documents/documents.controller.ts` — `DocumentsController`: POST /documents/upload, GET /documents/:code, GET /documents/:code/url
+  - [x] `apps/backend/src/documents/documents.module.ts` — `DocumentsModule` (imports StorageModule, PrismaModule, AuditModule, MulterModule)
+- Key files updated:
+  - [x] `apps/backend/prisma/schema.prisma` — 4 new enums (DocumentType, DocumentStatus, DocumentVisibility, FileAccessAction) + Document + FileAccessLog models
+  - [x] `apps/backend/src/prisma/prisma.service.ts` — added `document` and `fileAccessLog` getters
+  - [x] `apps/backend/src/app.module.ts` — imports `DocumentsModule`
 - Key decisions made:
-  - (fill in after phase)
+  - **R2 client:** S3Client with `region: 'auto'` and `forcePathStyle: false` — both required for Cloudflare R2 compatibility.
+  - **Startup check:** `R2Client.onModuleInit()` sends HeadBucket to verify credentials/bucket. Failure logs a warning; the app starts in degraded mode — never crashes on storage unavailability.
+  - **Object key format:** `{folder}/{year}/{month}/{uuid}.{ext}` — UUID is cryptographically random, no PII. Extension derived from MIME type (not from user-provided file name).
+  - **Folder mapping:** `DocumentType` enum maps to R2 folder: MEMBER_PHOTO → `members/photos`, MEMBER_CARD → `members/cards`, MARRIAGE_REQUEST_PDF → `marriage/requests`, MEDICAL_REFERRAL_PDF → `marriage/referrals`, SUPPORTING_DOCUMENT → `documents/uploads`.
+  - **SHA-256 checksum:** Computed with Node.js `crypto.createHash('sha256')` before upload. Stored in `Document.checksum` and passed as R2 object metadata (`x-checksum-sha256`).
+  - **File size:** Validated in StorageService against `MAX_FILE_SIZE_MB` (default 10 MB). Multer is configured with a 50 MB ceiling as an early guard.
+  - **Memory storage:** Files are stored in RAM during the request (Multer `memoryStorage()`). No disk writes. Acceptable for MVP file sizes ≤ 10 MB.
+  - **documentCode:** Public identifier format `DOC-YYYY-NNNNN`. Generated with same pattern as `memberCode` (find highest sequence for year, increment, retry 3× on collision, UUID fallback).
+  - **Signed URL expiry:** Default 300 s (`R2_SIGNED_URL_EXPIRES_IN`). The `/url` endpoint accepts `?expiresIn=<seconds>` clamped to [30, 3600]. The signed URL itself is never logged (only the access event is).
+  - **r2ObjectKey never returned:** `toResponse()` maps Prisma records to `DocumentResponse` — `r2ObjectKey`, `r2Bucket`, `checksum`, and database `id` are excluded.
+  - **FileAccessLog pattern:** Follows the fire-and-never-crash AuditService pattern. `logAccess()` is async but errors are caught internally; it never throws.
+  - **Soft delete:** `status = DELETED` + `deletedAt` set; DB record kept. Physical R2 deletion deferred to retention policy. `findActiveDocument()` checks `status ≠ DELETED`.
+  - **StorageModule exported by DocumentsModule:** Phase 8 (MembersModule photo upload) can import DocumentsModule and inject StorageService directly.
+  - **Installed packages:** `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`, `@types/multer`
 
 ---
 
