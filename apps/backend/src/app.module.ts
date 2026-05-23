@@ -7,6 +7,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { VerificationModule } from './verification/verification.module';
+import { MembersModule } from './members/members.module';
+import { CommunitiesModule } from './communities/communities.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -38,6 +40,8 @@ import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage'
     AuthModule,
     AuditModule,
     VerificationModule,
+    MembersModule,
+    CommunitiesModule,
 
     // ── Rate limiting ────────────────────────────────────────────────────────────
     // Global throttle: 60 requests per 60 seconds per IP.
