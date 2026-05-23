@@ -37,6 +37,30 @@ enum MemberStatus {
   DECEASED
 }
 
+enum VerificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum VerificationPurpose {
+  MEMBER_ACTIVATION
+  PASSWORD_RESET
+  LOGIN_VERIFICATION
+  SENSITIVE_ACTION
+}
+
+enum VerificationProvider {
+  TWILIO
+}
+
+enum OtpStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  FAILED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User
 // A user account used for authentication.
@@ -111,4 +135,54 @@ model AuditLog {
   @@index([entityType])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OtpVerification
+// Tracks every verification request sent via Twilio (or future providers).
+// Raw OTP codes are NEVER stored — Twilio manages the code internally.
+// The providerVerificationId (Twilio SID) is stored for correlation only.
+// attempts is incremented on every failed verifyCode call.
+// status transitions: PENDING → VERIFIED | EXPIRED | FAILED
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OtpVerification {
+  id String @id @default(cuid())
+
+  // What kind of contact point is being verified (e.g. "email", "phone")
+  targetType String
+
+  // The actual contact point value (email address or phone number)
+  targetValue String
+
+  // Which provider sent the code
+  provider VerificationProvider
+
+  // Provider-specific verification ID for correlation (e.g. Twilio Verification SID)
+  providerVerificationId String?
+
+  // Channel used for delivery
+  channel VerificationChannel
+
+  // Why this verification was initiated
+  purpose VerificationPurpose
+
+  // Lifecycle status of this verification
+  status OtpStatus @default(PENDING)
+
+  // Number of failed verifyCode attempts — blocks further attempts at OTP_MAX_ATTEMPTS
+  attempts Int @default(0)
+
+  // When this verification record expires (set on creation from OTP_EXPIRES_IN_MINUTES)
+  expiresAt DateTime
+
+  // Set when the code is successfully verified
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  // Fast lookup by recipient + delivery context + status
+  @@index([targetValue, channel, purpose, status])
+  @@index([createdAt])
+  @@map("otp_verifications")
 }
