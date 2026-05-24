@@ -63,7 +63,9 @@ export default function ConnexionPage() {
           className="mx-auto h-24 w-auto object-contain"
         />
         <h1 className="mt-4 text-2xl font-bold text-[#003B8E]">Shiddukim</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Plateforme de gestion des fidèles</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Plateforme de gestion matrimoniale et des fidèles
+        </p>
       </div>
 
       <Card>

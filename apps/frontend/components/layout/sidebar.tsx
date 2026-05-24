@@ -3,14 +3,16 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import {
   BarChart3,
   BookOpen,
   Building2,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   LogOut,
-  Settings,
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -53,6 +55,7 @@ const memberNavItems: NavItem[] = [
 export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
   const items = variant === 'member' ? memberNavItems : adminNavItems;
   const filteredItems = items.filter((item) => {
@@ -71,9 +74,19 @@ export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' })
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-border bg-white">
+    <aside
+      className={cn(
+        'relative flex h-screen flex-col border-r border-border bg-white transition-all duration-200',
+        collapsed ? 'w-16' : 'w-64',
+      )}
+    >
       {/* Logo area */}
-      <div className="flex h-16 items-center gap-3 border-b border-border px-5">
+      <div
+        className={cn(
+          'flex h-16 shrink-0 items-center border-b border-border transition-all duration-200',
+          collapsed ? 'justify-center px-0' : 'gap-3 px-5',
+        )}
+      >
         <Image
           src="/brand/logo.jpeg"
           alt="Shiddukim"
@@ -82,11 +95,26 @@ export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' })
           priority
           className="h-10 w-10 shrink-0 object-contain"
         />
-        <span className="text-lg font-bold text-[#003B8E]">Shiddukim</span>
+        {!collapsed && (
+          <span className="text-lg font-bold text-[#003B8E] whitespace-nowrap">Shiddukim</span>
+        )}
       </div>
 
+      {/* Collapse toggle */}
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        title={collapsed ? 'Agrandir le menu' : 'Réduire le menu'}
+        className="absolute -right-3 top-[4.75rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-white shadow-sm hover:bg-[#F5F7FA] transition-colors"
+      >
+        {collapsed ? (
+          <ChevronRight className="size-3.5 text-[#003B8E]" />
+        ) : (
+          <ChevronLeft className="size-3.5 text-[#003B8E]" />
+        )}
+      </button>
+
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="flex-1 overflow-y-auto px-2 py-4">
         <ul className="space-y-1">
           {filteredItems.map((item) => {
             const Icon = item.icon;
@@ -95,15 +123,17 @@ export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' })
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  title={collapsed ? item.label : undefined}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    'flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    collapsed ? 'justify-center' : 'gap-3',
                     active
                       ? 'bg-[#003B8E] text-white'
                       : 'text-[#1F2937] hover:bg-[#F5F7FA] hover:text-[#003B8E]',
                   )}
                 >
                   <Icon className="size-4 shrink-0" />
-                  {item.label}
+                  {!collapsed && item.label}
                 </Link>
               </li>
             );
@@ -112,17 +142,23 @@ export function Sidebar({ variant = 'admin' }: { variant?: 'admin' | 'member' })
       </nav>
 
       {/* User + Logout */}
-      <div className="border-t border-border p-4">
-        <div className="mb-3 px-1">
-          <p className="text-xs font-medium text-foreground truncate">{user?.email}</p>
-          <p className="text-xs text-muted-foreground">{user?.role}</p>
-        </div>
+      <div className="border-t border-border p-3">
+        {!collapsed && (
+          <div className="mb-3 px-1">
+            <p className="truncate text-xs font-medium text-foreground">{user?.email}</p>
+            <p className="text-xs text-muted-foreground">{user?.role}</p>
+          </div>
+        )}
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[#B91C1C] hover:bg-red-50 transition-colors"
+          title={collapsed ? 'Déconnexion' : undefined}
+          className={cn(
+            'flex w-full items-center rounded-lg px-3 py-2 text-sm font-medium text-[#B91C1C] hover:bg-red-50 transition-colors',
+            collapsed ? 'justify-center' : 'gap-3',
+          )}
         >
           <LogOut className="size-4 shrink-0" />
-          Déconnexion
+          {!collapsed && 'Déconnexion'}
         </button>
       </div>
     </aside>
