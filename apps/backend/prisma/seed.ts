@@ -88,6 +88,12 @@ async function main(): Promise<void> {
       Role.MEMBER,
       passwordHash,
     ),
+    // member4 has NO marriage request — use this account to test the new form
+    member4: await upsertUser(
+      'member4@shiddukim.test',
+      Role.MEMBER,
+      passwordHash,
+    ),
   };
 
   // ── Communities (church sites in Kinshasa) ────────────────────────────────────
@@ -396,6 +402,36 @@ async function main(): Promise<void> {
     },
   });
 
+  // SHK-2026-00010 — Nathan Lukoki (MEMBER user, Kalamu)
+  //   No marriage request — log in as member4@shiddukim.test to test the new form.
+  const nathan = await prisma.member.upsert({
+    where: { memberCode: 'SHK-2026-00010' },
+    update: {
+      firstName: 'Nathan',
+      lastName: 'Lukoki',
+      gender: Gender.MALE,
+      email: 'member4@shiddukim.test',
+      phone: '+243800000010',
+      status: MemberStatus.ACTIVATED,
+      communityId: kalamu.id,
+    },
+    create: {
+      memberCode: 'SHK-2026-00010',
+      firstName: 'Nathan',
+      lastName: 'Lukoki',
+      gender: Gender.MALE,
+      dateOfBirth: new Date('1998-05-04'),
+      placeOfBirth: 'Kinshasa',
+      address: 'Avenue Bokassa 18, Q. Matonge, C. Kalamu, Kinshasa',
+      email: 'member4@shiddukim.test',
+      phone: '+243800000010',
+      baptismDate: new Date('2019-07-14'),
+      baptizedBy: 'Pasteur Diyoka Nsanguluja',
+      status: MemberStatus.ACTIVATED,
+      communityId: kalamu.id,
+    },
+  });
+
   // ── Community presidents ───────────────────────────────────────────────────────
   await prisma.community.update({
     where: { id: limete.id },
@@ -408,6 +444,7 @@ async function main(): Promise<void> {
     [users.member1.id, david.id],
     [users.member2.id, emmanuel.id],
     [users.member3.id, jonas.id],
+    [users.member4.id, nathan.id],
   ] as [string, string][]) {
     await prisma.userMemberLink.upsert({
       where: { userId_memberId: { userId, memberId } },
@@ -956,6 +993,11 @@ async function main(): Promise<void> {
     {
       rôle: 'MEMBER (Jonas)',
       email: 'member3@shiddukim.test',
+      motDePasse: password,
+    },
+    {
+      rôle: 'MEMBER (Nathan) ← pas de dossier',
+      email: 'member4@shiddukim.test',
       motDePasse: password,
     },
   ]);
