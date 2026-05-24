@@ -196,6 +196,68 @@ export default function DossierDetailPage({
               </Card>
             )}
 
+            {/* Questionnaire pastoral — visible to pastoral staff and the member themselves */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Questionnaire pastoral</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <QRow
+                  number="3"
+                  label="A-t-il déjà parlé de son intention à la fiancée ?"
+                  value={request.hasSpokenToSpouse}
+                />
+                {request.hasSpokenToSpouse === true && (
+                  <QRow label="Depuis quand ?" text={request.hasSpokenToSpouseSince} indent />
+                )}
+                <QRow
+                  number="5"
+                  label="En contact téléphonique ou autres contacts avec elle ?"
+                  value={request.hasContactWithSpouse}
+                />
+                <QRow
+                  number="6"
+                  label="Ses parents sont-ils au courant ?"
+                  value={request.parentsAware}
+                />
+                <QRow
+                  number="7"
+                  label="Les parents de la fille sont-ils au courant ?"
+                  value={request.spouseParentsAware}
+                />
+                <QRow
+                  number="8"
+                  label="Ses parents connaissent-ils la fille et sa famille ?"
+                  value={request.parentsKnowSpouse}
+                />
+                {request.parentsKnowSpouse === true && (
+                  <QRow
+                    number="9"
+                    label="Sont-ils d'accord ?"
+                    value={request.parentsApprove}
+                    indent
+                  />
+                )}
+                <QRow
+                  number="10"
+                  label="Les deux familles se sont-elles déjà rencontrées ?"
+                  value={request.familiesMet}
+                />
+                {request.familiesMet === true && (
+                  <QRow label="Depuis quand ?" text={request.familiesMetSince} indent />
+                )}
+                <div className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  11. Vous vous êtes déjà :
+                </div>
+                <QRow label="Embrassés ?" value={request.hasKissed} indent />
+                <QRow label="Touchés dans le corps ?" value={request.hasPhysicalContact} indent />
+                <QRow label="Connus ?" value={request.hasBeenIntimate} indent />
+                {request.hasBeenIntimate === true && (
+                  <QRow label="Combien de fois ?" text={request.intimacyCount} indent />
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>Timeline</CardTitle>
@@ -228,6 +290,52 @@ function Timeline({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between rounded-lg border p-3">
       <span>{label}</span>
       <span className="text-muted-foreground">{value}</span>
+    </div>
+  );
+}
+
+function QRow({
+  number,
+  label,
+  value,
+  text,
+  indent = false,
+}: {
+  number?: string;
+  label: string;
+  value?: boolean | null;
+  text?: string | null;
+  indent?: boolean;
+}) {
+  const display =
+    text !== undefined
+      ? (text ?? '—')
+      : value === null || value === undefined
+        ? '—'
+        : value
+          ? 'Oui'
+          : 'Non';
+
+  const isYes = value === true;
+  const isNo = value === false;
+
+  return (
+    <div className={`flex items-start justify-between gap-4 ${indent ? 'pl-5' : ''}`}>
+      <span className="text-foreground">
+        {number && <span className="mr-1 text-muted-foreground">{number}.</span>}
+        {label}
+      </span>
+      <span
+        className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
+          isYes
+            ? 'bg-green-100 text-green-800'
+            : isNo
+              ? 'bg-red-100 text-red-700'
+              : 'text-muted-foreground'
+        }`}
+      >
+        {display}
+      </span>
     </div>
   );
 }

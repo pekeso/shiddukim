@@ -426,6 +426,38 @@ model MarriageRequest {
   spouseEmail          String?
   intendedMarriageDate DateTime?
 
+  // ── Pastoral questionnaire ────────────────────────────────────────────────
+  // Mirrors the physical "Confirmation des informations pour le garçon" form.
+  // All fields are nullable at creation (DRAFT). Every boolean must be
+  // answered (non-null) before the request can be submitted.
+  //
+  // Q3  — A-t-il déjà parlé de son intention à la fiancée ?
+  hasSpokenToSpouse      Boolean?
+  // Q4  — Si oui, depuis quand ? (conditional on hasSpokenToSpouse = true)
+  hasSpokenToSpouseSince String?  @db.VarChar(255)
+  // Q5  — Est-il en contact téléphonique / autres contacts avec elle ?
+  hasContactWithSpouse   Boolean?
+  // Q6  — Ses parents sont-ils au courant ?
+  parentsAware           Boolean?
+  // Q7  — Les parents de la fille sont-ils au courant ?
+  spouseParentsAware     Boolean?
+  // Q8  — Ses parents connaissent-ils la fille et sa famille ?
+  parentsKnowSpouse      Boolean?
+  // Q9  — Si oui, sont-ils d'accord ? (conditional on parentsKnowSpouse = true)
+  parentsApprove         Boolean?
+  // Q10 — Les deux familles se sont-elles déjà rencontrées ?
+  familiesMet            Boolean?
+  // Q10b — Si oui, depuis quand ? (conditional on familiesMet = true)
+  familiesMetSince       String?  @db.VarChar(255)
+  // Q11a — Se sont-ils déjà embrassés ?
+  hasKissed              Boolean?
+  // Q11b — Se sont-ils touchés dans le corps ?
+  hasPhysicalContact     Boolean?
+  // Q11c — Se sont-ils connus (intimité sexuelle) ?
+  hasBeenIntimate        Boolean?
+  // Q11d — Combien de fois ? (conditional on hasBeenIntimate = true)
+  intimacyCount          String?  @db.VarChar(255)
+
   // Workflow state
   status         MarriageRequestStatus  @default(DRAFT)
   classification MarriageClassification? // set by PASTOR; null until classified

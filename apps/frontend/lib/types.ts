@@ -104,6 +104,20 @@ export interface MarriageRequest {
   reviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  // Pastoral questionnaire
+  hasSpokenToSpouse?: boolean | null;
+  hasSpokenToSpouseSince?: string | null;
+  hasContactWithSpouse?: boolean | null;
+  parentsAware?: boolean | null;
+  spouseParentsAware?: boolean | null;
+  parentsKnowSpouse?: boolean | null;
+  parentsApprove?: boolean | null;
+  familiesMet?: boolean | null;
+  familiesMetSince?: string | null;
+  hasKissed?: boolean | null;
+  hasPhysicalContact?: boolean | null;
+  hasBeenIntimate?: boolean | null;
+  intimacyCount?: string | null;
 }
 
 export interface GeneratedDocumentResponse {

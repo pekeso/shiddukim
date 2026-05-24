@@ -19,6 +19,20 @@ export interface MarriagePdfData {
   intendedMarriageDate: string | null; // formatted French date
   submittedAt: string | null; // formatted French date
   generatedAt: string; // formatted French date + time
+  // Pastoral questionnaire
+  hasSpokenToSpouse: boolean | null;
+  hasSpokenToSpouseSince: string | null;
+  hasContactWithSpouse: boolean | null;
+  parentsAware: boolean | null;
+  spouseParentsAware: boolean | null;
+  parentsKnowSpouse: boolean | null;
+  parentsApprove: boolean | null;
+  familiesMet: boolean | null;
+  familiesMetSince: string | null;
+  hasKissed: boolean | null;
+  hasPhysicalContact: boolean | null;
+  hasBeenIntimate: boolean | null;
+  intimacyCount: string | null;
 }
 
 /**
@@ -170,6 +184,80 @@ export class PdfService {
         'Date de soumission du dossier',
         data.submittedAt ?? '—',
       );
+
+      doc.moveDown(0.5);
+
+      // ── Section: Questionnaire pastoral ───────────────────────────────────
+      this.drawSectionTitle(doc, 'Questionnaire pastoral');
+
+      const oui = 'Oui';
+      const non = 'Non';
+      const nr = '—';
+      const yn = (v: boolean | null) => (v === null ? nr : v ? oui : non);
+
+      this.drawField(
+        doc,
+        '3. A-t-il déjà parlé de son intention à la fiancée ?',
+        yn(data.hasSpokenToSpouse),
+      );
+      if (data.hasSpokenToSpouse === true) {
+        this.drawField(
+          doc,
+          '4. Depuis quand ?',
+          data.hasSpokenToSpouseSince ?? nr,
+        );
+      }
+      this.drawField(
+        doc,
+        '5. Est-il en contact (téléphonique ou autre) avec elle ?',
+        yn(data.hasContactWithSpouse),
+      );
+      this.drawField(
+        doc,
+        '6. Ses parents sont-ils au courant ?',
+        yn(data.parentsAware),
+      );
+      this.drawField(
+        doc,
+        '7. Les parents de la fille sont-ils au courant ?',
+        yn(data.spouseParentsAware),
+      );
+      this.drawField(
+        doc,
+        '8. Ses parents connaissent-ils la fille et sa famille ?',
+        yn(data.parentsKnowSpouse),
+      );
+      if (data.parentsKnowSpouse === true) {
+        this.drawField(doc, "9. Sont-ils d'accord ?", yn(data.parentsApprove));
+      }
+      this.drawField(
+        doc,
+        '10. Les deux familles se sont-elles déjà rencontrées ?',
+        yn(data.familiesMet),
+      );
+      if (data.familiesMet === true) {
+        this.drawField(doc, '    Depuis quand ?', data.familiesMetSince ?? nr);
+      }
+
+      doc.moveDown(0.3);
+      this.drawField(
+        doc,
+        '11a. Se sont-ils déjà embrassés ?',
+        yn(data.hasKissed),
+      );
+      this.drawField(
+        doc,
+        '11b. Se sont-ils touchés dans le corps ?',
+        yn(data.hasPhysicalContact),
+      );
+      this.drawField(
+        doc,
+        '11c. Se sont-ils connus (intimité) ?',
+        yn(data.hasBeenIntimate),
+      );
+      if (data.hasBeenIntimate === true) {
+        this.drawField(doc, '     Combien de fois ?', data.intimacyCount ?? nr);
+      }
 
       // ── Footer ─────────────────────────────────────────────────────────────
       this.drawFooter(doc, data.generatedAt);

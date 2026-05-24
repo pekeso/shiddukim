@@ -53,6 +53,20 @@ export interface MarriageRequestResponse {
   reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // ── Pastoral questionnaire ────────────────────────────────────────────────
+  hasSpokenToSpouse: boolean | null;
+  hasSpokenToSpouseSince: string | null;
+  hasContactWithSpouse: boolean | null;
+  parentsAware: boolean | null;
+  spouseParentsAware: boolean | null;
+  parentsKnowSpouse: boolean | null;
+  parentsApprove: boolean | null;
+  familiesMet: boolean | null;
+  familiesMetSince: string | null;
+  hasKissed: boolean | null;
+  hasPhysicalContact: boolean | null;
+  hasBeenIntimate: boolean | null;
+  intimacyCount: string | null;
 }
 
 export interface PaginatedMarriageRequests {
@@ -91,6 +105,20 @@ type MarriageRequestWithMember = {
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  // Pastoral questionnaire
+  hasSpokenToSpouse: boolean | null;
+  hasSpokenToSpouseSince: string | null;
+  hasContactWithSpouse: boolean | null;
+  parentsAware: boolean | null;
+  spouseParentsAware: boolean | null;
+  parentsKnowSpouse: boolean | null;
+  parentsApprove: boolean | null;
+  familiesMet: boolean | null;
+  familiesMetSince: string | null;
+  hasKissed: boolean | null;
+  hasPhysicalContact: boolean | null;
+  hasBeenIntimate: boolean | null;
+  intimacyCount: string | null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,6 +179,20 @@ export class MarriageService {
           ? new Date(dto.intendedMarriageDate)
           : null,
         status: MarriageRequestStatus.DRAFT,
+        // Pastoral questionnaire
+        hasSpokenToSpouse: dto.hasSpokenToSpouse ?? null,
+        hasSpokenToSpouseSince: dto.hasSpokenToSpouseSince ?? null,
+        hasContactWithSpouse: dto.hasContactWithSpouse ?? null,
+        parentsAware: dto.parentsAware ?? null,
+        spouseParentsAware: dto.spouseParentsAware ?? null,
+        parentsKnowSpouse: dto.parentsKnowSpouse ?? null,
+        parentsApprove: dto.parentsApprove ?? null,
+        familiesMet: dto.familiesMet ?? null,
+        familiesMetSince: dto.familiesMetSince ?? null,
+        hasKissed: dto.hasKissed ?? null,
+        hasPhysicalContact: dto.hasPhysicalContact ?? null,
+        hasBeenIntimate: dto.hasBeenIntimate ?? null,
+        intimacyCount: dto.intimacyCount ?? null,
       },
       include: { member: { select: { memberCode: true } } },
     });
@@ -210,6 +252,68 @@ export class MarriageService {
     if (!existing.spousePhone && !existing.spouseEmail) {
       throw new BadRequestException(
         'Au moins une coordonnée du/de la conjoint(e) (téléphone ou e-mail) est obligatoire avant de soumettre le dossier.',
+      );
+    }
+
+    // 5. Validate pastoral questionnaire is fully answered
+    const missingBooleans: string[] = [];
+    if (existing.hasSpokenToSpouse === null)
+      missingBooleans.push('Question 3 (avez-vous parlé de votre intention ?)');
+    if (existing.hasContactWithSpouse === null)
+      missingBooleans.push('Question 5 (avez-vous des contacts avec elle ?)');
+    if (existing.parentsAware === null)
+      missingBooleans.push('Question 6 (vos parents sont-ils au courant ?)');
+    if (existing.spouseParentsAware === null)
+      missingBooleans.push(
+        'Question 7 (les parents de la fille sont-ils au courant ?)',
+      );
+    if (existing.parentsKnowSpouse === null)
+      missingBooleans.push(
+        'Question 8 (vos parents connaissent-ils la fille ?)',
+      );
+    if (existing.familiesMet === null)
+      missingBooleans.push(
+        'Question 10 (les deux familles se sont-elles rencontrées ?)',
+      );
+    if (existing.hasKissed === null)
+      missingBooleans.push('Question 11a (vous êtes-vous embrassés ?)');
+    if (existing.hasPhysicalContact === null)
+      missingBooleans.push(
+        'Question 11b (vous êtes-vous touchés dans le corps ?)',
+      );
+    if (existing.hasBeenIntimate === null)
+      missingBooleans.push('Question 11c (vous êtes-vous connus ?)');
+
+    // Conditional: Q9 only required if Q8 = true
+    if (
+      existing.parentsKnowSpouse === true &&
+      existing.parentsApprove === null
+    ) {
+      missingBooleans.push("Question 9 (vos parents sont-ils d'accord ?)");
+    }
+
+    if (missingBooleans.length > 0) {
+      throw new BadRequestException(
+        `Le questionnaire pastoral est incomplet. Veuillez répondre aux questions suivantes avant de soumettre le dossier : ${missingBooleans.join(', ')}.`,
+      );
+    }
+
+    // Conditional text fields
+    if (
+      existing.hasSpokenToSpouse === true &&
+      (!existing.hasSpokenToSpouseSince ||
+        existing.hasSpokenToSpouseSince.trim() === '')
+    ) {
+      throw new BadRequestException(
+        'Veuillez préciser depuis quand vous avez parlé de votre intention à la fiancée (question 4).',
+      );
+    }
+    if (
+      existing.familiesMet === true &&
+      (!existing.familiesMetSince || existing.familiesMetSince.trim() === '')
+    ) {
+      throw new BadRequestException(
+        'Veuillez préciser depuis quand les deux familles se sont rencontrées (question 10b).',
       );
     }
 
@@ -544,6 +648,20 @@ export class MarriageService {
       intendedMarriageDate: formatDateFr(request.intendedMarriageDate),
       submittedAt: formatDateFr(request.submittedAt),
       generatedAt: formatDateTimeFr(new Date()),
+      // Pastoral questionnaire
+      hasSpokenToSpouse: request.hasSpokenToSpouse,
+      hasSpokenToSpouseSince: request.hasSpokenToSpouseSince,
+      hasContactWithSpouse: request.hasContactWithSpouse,
+      parentsAware: request.parentsAware,
+      spouseParentsAware: request.spouseParentsAware,
+      parentsKnowSpouse: request.parentsKnowSpouse,
+      parentsApprove: request.parentsApprove,
+      familiesMet: request.familiesMet,
+      familiesMetSince: request.familiesMetSince,
+      hasKissed: request.hasKissed,
+      hasPhysicalContact: request.hasPhysicalContact,
+      hasBeenIntimate: request.hasBeenIntimate,
+      intimacyCount: request.intimacyCount,
     });
 
     // 3. Upload to R2
@@ -871,6 +989,20 @@ export class MarriageService {
       reviewedAt: request.reviewedAt?.toISOString() ?? null,
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
+      // Pastoral questionnaire
+      hasSpokenToSpouse: request.hasSpokenToSpouse,
+      hasSpokenToSpouseSince: request.hasSpokenToSpouseSince,
+      hasContactWithSpouse: request.hasContactWithSpouse,
+      parentsAware: request.parentsAware,
+      spouseParentsAware: request.spouseParentsAware,
+      parentsKnowSpouse: request.parentsKnowSpouse,
+      parentsApprove: request.parentsApprove,
+      familiesMet: request.familiesMet,
+      familiesMetSince: request.familiesMetSince,
+      hasKissed: request.hasKissed,
+      hasPhysicalContact: request.hasPhysicalContact,
+      hasBeenIntimate: request.hasBeenIntimate,
+      intimacyCount: request.intimacyCount,
     };
   }
 
